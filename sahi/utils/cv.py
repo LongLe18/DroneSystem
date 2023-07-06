@@ -8,6 +8,7 @@ import time
 from typing import List, Optional, Union
 
 import cv2
+from math import sqrt
 import numpy as np
 import requests
 from PIL import Image
@@ -478,19 +479,15 @@ def visualize_object_predictions(
 
         # apply tracking
         if (tracking_model != None):
-            # set color 
             if colors is not None:
                 color = colors(object_prediction.category.id)
 
             dets = np.array([[int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]), score,  object_prediction.category.id]])
-            ts = tracking_model.update(dets, image)
+            ts = tracking_model.update(dets, image) # update tracker
 
             xyxys = ts[:, 0:4].astype('int') # float64 to int
             ids = ts[:, 4].astype('int') # float64 to int
-            # confs = ts[:, 5]
-            # clss = ts[:, 6]
 
-            # print bboxes with their associated id, cls and conf
             if ts.shape[0] != 0:
                 for xyxy, id, in zip(xyxys, ids):
                     cv2.rectangle(
@@ -506,7 +503,6 @@ def visualize_object_predictions(
                     outside = xyxy[1] - h - 3 >= 0  # label fits outside box
                     p2 = xyxy[0] + w, xyxy[1] - h - 3 if outside else xyxy[1] + h + 3
 
-                    # add bounding box text
                     cv2.rectangle(image, (xyxy[0], xyxy[1]), p2, color, -1, cv2.LINE_AA)  # filled
                     cv2.putText(
                         image,
@@ -517,6 +513,8 @@ def visualize_object_predictions(
                         (255, 255, 255),
                         thickness=text_th
                     )
+            else:
+                print('--------------------- lost object ------------------')
         else: 
             # set color 
             if colors is not None:
@@ -568,6 +566,117 @@ def visualize_object_predictions(
         # save inference result
         save_path = str(Path(output_dir) / (file_name + "." + export_format))
         cv2.imwrite(save_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+
+    elapsed_time = time.time() - elapsed_time
+    return {"image": image, "elapsed_time": elapsed_time}
+
+
+def visualize_object_predictions_new(
+    image: np.array,
+    object_prediction_list,
+    rect_th: int = None,
+    text_size: float = None,
+    text_th: float = None,
+    color: tuple = None,
+    tracking_model = None,
+):
+    
+    elapsed_time = time.time()
+    # deepcopy image so that original is not altered
+    image = copy.deepcopy(image)
+    # select predefined classwise color palette if not specified
+    if color is None:
+        colors = Colors()
+    else:
+        colors = None
+    # set rect_th for boxes
+    rect_th = rect_th or max(round(sum(image.shape) / 2 * 0.003), 2)
+    # set text_th for category names
+    text_th = text_th or max(rect_th - 1, 1)
+    # set text_size for category names
+    text_size = text_size or rect_th / 3
+
+    # add bboxes to image if present
+    for object_prediction in object_prediction_list:
+        # deepcopy object_prediction_list so that original is not altered
+        object_prediction = object_prediction.deepcopy()
+
+        bbox = object_prediction.bbox.to_xyxy()
+        category_name = object_prediction.category.name
+        score = object_prediction.score.value
+
+        # apply tracking
+        if (tracking_model != None):
+            if colors is not None:
+                color = colors(object_prediction.category.id)
+
+            dets = np.array([[int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]), score,  object_prediction.category.id]])
+            ts = tracking_model.update(dets, image) # update tracker
+
+            xyxys = ts[:, 0:4].astype('int') # float64 to int
+            ids = ts[:, 4].astype('int') # float64 to int
+
+            if ts.shape[0] != 0:
+                for xyxy, id, in zip(xyxys, ids):
+                    cv2.rectangle(
+                        image,
+                        (xyxy[0], xyxy[1]),
+                        (xyxy[2], xyxy[3]),
+                        color,  
+                        rect_th
+                    )
+
+                    label = f'{id} {score:.2f} {category_name}'
+                    w, h = cv2.getTextSize(label, 0, fontScale=text_size, thickness=text_th)[0]  # label width, height
+                    outside = xyxy[1] - h - 3 >= 0  # label fits outside box
+                    p2 = xyxy[0] + w, xyxy[1] - h - 3 if outside else xyxy[1] + h + 3
+
+                    cv2.rectangle(image, (xyxy[0], xyxy[1]), p2, color, -1, cv2.LINE_AA)  # filled
+                    cv2.putText(
+                        image,
+                        label,
+                        (xyxy[0], xyxy[1] - 2 if outside else xyxy[1] + h + 2),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        text_size,
+                        (255, 255, 255),
+                        thickness=text_th
+                    )
+            else:
+                print('--------------------- lost object ------------------')
+        else: 
+            # set color 
+            if colors is not None:
+                color = colors(object_prediction.category.id)
+            # set bbox points
+            p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
+            # visualize boxes
+            cv2.rectangle(
+                image,
+                p1,
+                p2,
+                color=color,
+                thickness=rect_th,
+            )
+
+            # arange bounding box text location
+            label = f"{category_name}"
+
+            label += f" {score:.2f}"
+
+            w, h = cv2.getTextSize(label, 0, fontScale=text_size, thickness=text_th)[0]  # label width, height
+            outside = p1[1] - h - 3 >= 0  # label fits outside box
+            p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
+            # add bounding box text
+            cv2.rectangle(image, p1, p2, color, -1, cv2.LINE_AA)  # filled
+            cv2.putText(
+                image,
+                label,
+                (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
+                0,
+                text_size,
+                (255, 255, 255),
+                thickness=text_th,
+            )
 
     elapsed_time = time.time() - elapsed_time
     return {"image": image, "elapsed_time": elapsed_time}
@@ -677,3 +786,94 @@ def exif_transpose(image: Image.Image):
             del exif[0x0112]
             image.info["exif"] = exif.tobytes()
     return image
+
+
+def get_nearest_slice(image_width, slice_list):
+    half_width = image_width
+    for s in slice_list:
+        if s[0] >= half_width:
+            return s
+    return slice_list[-1]  # return None if there is no suitable slice
+
+
+def draw_history_path(frame, h_path,  num_point = 50):
+    #draw path
+    h_path_len = len(h_path)
+    for i in range(max(0, h_path_len - num_point), h_path_len - 1):
+        bbox0 = h_path[i]
+        bbox1 = h_path[i+1]
+        ctObj0 = (int(bbox0[0] + bbox0[2]//2), int(bbox0[1] + bbox0[3]//2))
+        ctObj1 = (int(bbox1[0] + bbox1[2]//2), int(bbox1[1] + bbox1[3]//2))
+        cv2.line(frame, ctObj0, ctObj1, (255, 0, 255) ,2)
+
+
+def dis2p(x1,y1,x2,y2):
+    return sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1))
+
+
+def check_tracker(center, dets, thresh = 15):
+    if len(dets) == 0:
+        return True
+    res = False
+    for obj in dets:
+        bbox = obj.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
+        p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
+        x2 = p1[0] + (p2[0] - p1[0]) / 2
+        y2 = p1[1] + (p2[1] - p1[1]) / 2
+        dis = dis2p(center[0], center[1], x2, y2)
+        # print('dis =', dis)
+        if dis < thresh:
+            res = True
+    return res
+
+
+def draw_dets(image, dets):
+    colors = Colors()
+    rect_th = max(round(sum(image.shape) / 2 * 0.003), 2)
+    text_th = max(rect_th - 1, 1)
+    text_size = rect_th / 3
+
+    for obj in dets:
+        color = colors(obj.category.id)
+        bbox = obj.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
+        category_name = obj.category.name
+        score = obj.score.value
+
+        p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
+        
+        cv2.rectangle(image, p1, p2, color=color, thickness=rect_th) # yellow
+
+        label = f"{category_name}"
+
+        label += f" {score:.2f}"
+
+        w, h = cv2.getTextSize(label, 0, fontScale=text_size, thickness=text_th)[0]  # label width, height
+        outside = p1[1] - h - 3 >= 0  # label fits outside box
+        p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
+        # add bounding box text
+        cv2.rectangle(image, p1, p2, color, -1, cv2.LINE_AA)  # filled
+        cv2.putText(
+            image,
+            label,
+            (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
+            0,
+            text_size,
+            (255, 255, 255),
+            thickness=text_th,
+        )
+    return image
+
+
+def draw_sight( frame, posx, posy):
+    size = 120
+    gap = int(size/4)
+    color = (0, 255, 0)
+    cv2.line(frame, (posx-size*3,  posy),     (posx-gap,  posy  )  , color,2 )  #crosshair horizontal
+    cv2.line(frame, (posx+size*3,  posy),     (posx+gap,  posy  )  , color,2 )  #crosshair horizontal
+    cv2.line(frame, (posx,       posy-size), ( posx,       posy-gap ), color,2)  #crosshair vertical
+    cv2.line(frame, (posx,       posy+size*3), ( posx,       posy+gap ), color,2)  #crosshair vertical
+    cv2.circle(frame, (posx,posy), 0, color, 2) #crosshair point center
+    cv2.circle(frame, (posx,posy), size, color, 1) #crosshair circle 1
+    cv2.circle(frame, (posx,posy), size*2, color, 1) #crosshair circle 2
+    cv2.circle(frame, (posx,posy), size*3, color, 2) #crosshair circle 2
+    return frame

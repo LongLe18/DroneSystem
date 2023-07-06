@@ -1,7 +1,7 @@
 import torch
 import argparse
 from pathlib import Path
-from sahi.predict import  predict
+from sahi.predict import  predict_new
 from boxmot.utils import logger as LOGGER
 from boxmot.utils.torch_utils import select_device
 
@@ -11,19 +11,17 @@ def run(args):
     select_device(args['device'])
     LOGGER.info(args)
 
-    predict(
+    predict_new(
         model_type=args['type_model'],
         model_path=args['yolo_model'],
         model_device=args['device'],
         model_confidence_threshold=args['conf'],
         source=args['source'],
-        slice_height=256,
-        slice_width=256,
         overlap_height_ratio=0.2,
         overlap_width_ratio=0.2,
         view_video=args['show'],
         no_sliced_prediction=args['slice'],
-        tracker=args['apply_tracking'],
+        apply_tracking=args['apply_tracking'],
         typeTracker=args['tracking_method'],
         model_pathTracking=args['reid_model']
     )
