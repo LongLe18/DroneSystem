@@ -27,7 +27,6 @@ def run_tracker(tracker_name, tracker_param, run_id=None, video_path=None):
         debug: Debug level.
         threads: Number of threads.
     """
-
     trackers = Tracker(tracker_name, tracker_param, None, run_id)
 
     trackers.run_video(video_path)

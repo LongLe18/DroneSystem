@@ -22,8 +22,6 @@ def run(args):
         view_video=args['show'],
         no_sliced_prediction=args['slice'],
         apply_tracking=args['apply_tracking'],
-        typeTracker=args['tracking_method'],
-        model_pathTracking=args['reid_model']
     )
 
 
@@ -31,15 +29,13 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--type-model', type=str, default='yolov8', help='yolo version')
     parser.add_argument('--yolo-model', type=Path, default='weights/detection/v8_small.pt', help='model.pt path(s)')
-    parser.add_argument('--reid-model', type=Path, default='weights/tracking/osnet_x0_25_msmt17.pt')
-    parser.add_argument('--tracking-method', type=str, default='strongsort', help='deepocsort, botsort, strongsort, ocsort, bytetrack')
     parser.add_argument('--source', type=str, default='0', help='file/dir/URL/glob, 0 for webcam')  
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf', type=float, default=0.25, help='confidence threshold')
     parser.add_argument('--iou', type=float, default=0.7, help='intersection over union (IoU) threshold for NMS')
     parser.add_argument('--device', default='cuda:0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--apply-tracking', action='store_true', help='apply tracking object')
-    parser.add_argument('--slice', action='store_true', help='display tracking video results')
+    parser.add_argument('--slice', action='store_true', help='apply plugin SAHI to detect small object')
     parser.add_argument('--show', action='store_true', help='display tracking video results')
     parser.add_argument('--save', action='store_true', help='save video tracking results')
     # # class 0 is person, 1 is bycicle, 2 is car... 79 is oven

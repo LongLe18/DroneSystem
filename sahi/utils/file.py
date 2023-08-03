@@ -213,22 +213,6 @@ def import_model_class(model_type, class_name):
     class_ = getattr(module, class_name)
     return class_
 
-def import_model_tracking_class(model_type, class_name):
-    """
-    Imports a predefined detection class by class name.
-
-    Args:
-        model_type: str
-            "yolov5", "detectron2", "mmdet", "huggingface" etc
-        model_name: str
-            Name of the detection model class (example: "MmdetDetectionModel")
-    Returns:
-        class_: class with given path
-    """
-    module = __import__(f"boxmot", fromlist=[class_name])
-    class_ = getattr(module, class_name)
-    return class_
-
 
 def increment_path(path, exist_ok=True, sep=""):
     # Increment path, i.e. runs/exp --> runs/exp{sep}0, runs/exp{sep}1 etc.

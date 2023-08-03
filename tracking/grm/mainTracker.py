@@ -52,6 +52,7 @@ class Tracker:
         self.dataset_name = dataset_name
         self.run_id = run_id
         self.display_name = display_name
+        self.h_path = []
 
         env = env_settings()
         if self.run_id is None:
@@ -193,7 +194,7 @@ class Tracker:
         if debug is None:
             debug_ = getattr(params, 'debug', 0)
         params.debug = debug_
-
+        
         params.tracker_name = self.name
         params.param_name = self.parameter_name
 

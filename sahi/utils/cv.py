@@ -685,7 +685,7 @@ def get_nearest_slice(image_width, slice_list):
     return slice_list[-1]  # return None if there is no suitable slice
 
 
-def draw_history_path(frame, h_path,  num_point = 50):
+def draw_history_path(frame, h_path, num_point = 50):
     #draw path
     h_path_len = len(h_path)
     for i in range(max(0, h_path_len - num_point), h_path_len - 1):

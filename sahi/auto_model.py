@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from sahi.utils.file import import_model_class, import_model_tracking_class
+from sahi.utils.file import import_model_class
 
 MODEL_TYPE_TO_MODEL_CLASS_NAME = {
     "yolov8": "Yolov8DetectionModel",
@@ -11,14 +11,6 @@ MODEL_TYPE_TO_MODEL_CLASS_NAME = {
     "torchvision": "TorchVisionDetectionModel",
     "yolov5sparse": "Yolov5SparseDetectionModel",
     "yolonas": "YoloNasDetectionModel",
-}
-
-MODEL_TYPE_TO_MODEL_CLASS_NAME_TRACKING = {
-    "deepocsort": "DeepOCSORT",
-    "botsort": "BoTSORT",
-    "bytetrack": "BYTETracker",
-    "ocosrt": "OCSORT",
-    "strongsort": "StrongSORT",
 }
 
 class AutoDetectionModel:
@@ -84,38 +76,3 @@ class AutoDetectionModel:
             **kwargs,
         )
 
-
-class AutoTrackingModel:
-    @staticmethod
-    def from_pretrained(
-        model_type: str,
-        model_path: Optional[str] = None,
-        device: Optional[str] = None,
-        fp16: bool = True,
-        **kwargs,
-    ):
-        """
-        Loads a DetectionModel from given path.
-
-        Args:
-            model_type: str
-                Name of the detection framework (example: "yolov5", "mmdet", "detectron2")
-            model_path: str
-                Path of the detection model (ex. 'model.pt')
-            device: str
-                Device, "cpu" or "cuda:0"
-        Returns:
-            Returns an instance of a DetectionModel
-        Raises:
-            ImportError: If given {model_type} framework is not installed
-        """
-
-        model_class_name = MODEL_TYPE_TO_MODEL_CLASS_NAME_TRACKING[model_type]
-        TrackingModel = import_model_tracking_class(model_type, model_class_name)
-
-        return TrackingModel(
-            model_weights=model_path, # which ReID model to use
-            device=device,
-            fp16=fp16,
-            **kwargs,
-        )

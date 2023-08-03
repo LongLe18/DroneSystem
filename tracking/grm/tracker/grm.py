@@ -14,6 +14,7 @@ from utils.mask_utils import generate_mask_cond
 
 
 class GRM(BaseTracker):
+    
     def __init__(self, params, dataset_name):
         super(GRM, self).__init__(params)
         network = build_grm(params.cfg, training=False)

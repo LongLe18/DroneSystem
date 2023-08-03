@@ -18,7 +18,7 @@ from functools import cmp_to_key
 import numpy as np
 from tqdm import tqdm
 
-from sahi.auto_model import AutoDetectionModel, AutoTrackingModel
+from sahi.auto_model import AutoDetectionModel
 from sahi.models.base import DetectionModel
 from sahi.postprocess.combine import (
     GreedyNMMPostprocess,
@@ -45,7 +45,8 @@ from sahi.utils.cv import (
 )
 from sahi.utils.file import Path, increment_path, list_files, save_json, save_pickle
 from sahi.utils.import_utils import check_requirements
-from tracking.sot.tracker import Single_tracker
+from tracking.grm.mainTracker import Tracker as GRMTracker
+from tracking.seq.mainTracker import Tracker as SEQTracker
 from tracking.sort.tracker import Tracker
 
 POSTPROCESS_NAME_TO_CLASS = {
@@ -844,8 +845,6 @@ def predict_new(
     verbose: int = 1,
     force_postprocess_type: bool = False,
     apply_tracking: bool = False,
-    typeTracker: str = 'deepocsort',
-    model_pathTracking: str = None,
     **kwargs,
 ):
     # assert prediction type
@@ -909,14 +908,9 @@ def predict_new(
     durations_in_seconds["model_load"] = time_end
 
     # init model Tracking object
-    tracking_model = None
     if apply_tracking:
-        # tracking_model = AutoTrackingModel.from_pretrained(
-        #     model_type=typeTracker,
-        #     model_path=model_pathTracking,
-        #     device=model_device,
-        #     fp16=True,
-        # )
+        root_s_tracker = GRMTracker('grm', 'vitb_256_ep300', None, None)
+        # root_s_tracker = SEQTracker('seqtrack', 'seqtrack_b256', None, None)
         tracker = Tracker()
 
     # iterate over source images
@@ -932,6 +926,12 @@ def predict_new(
     object_prediction_list = []
     new_frame_time = 0
 
+    # params for tracking (grm, seq)
+    params = root_s_tracker.get_parameters()
+    params.debug = 0
+    params.tracker_name = root_s_tracker.name
+    params.param_name = root_s_tracker.parameter_name
+    
     for ind, image_path in enumerate(
         tqdm(image_iterator, f"Performing inference on {input_type_str}", total=num_frames)
     ):     
@@ -952,22 +952,23 @@ def predict_new(
                     obj_for_tracking = object_prediction_list[0]
                     bbox = obj_for_tracking.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
                     p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
-                    s_tracker = Single_tracker(0, image, (p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1])) # (xmin, ymin, width, height)
+                    s_tracker = root_s_tracker.create_tracker(params)
+                    s_tracker.initialize(image, {'init_bbox': [p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1]]}) # (xmin, ymin, width, height)
                 else:
                     single_track_mode = False
                     s_tracker = None      
             else: # update existing single tracker
-                
-                sucess, (left, top, wd, ht) = s_tracker.update(image)
-                
-                temp = image[int(top) : int(top + ht), int(left) : int(left + wd), :]
-                if sucess and temp.shape[0] > 0 and temp.shape[1] > 0:
-                    ctx = left + wd/2
-                    cty = top + ht/2
-                    # cv2.line(image, (int(w / 2), int(h / 2)), (int(ctx), int(cty)), (0, 255, 255) ,2) # red
-                    cv2.rectangle(image, (int(left),  int(top)), (int(left + wd), int(top + ht)), (0, 0, 255), 2) # blue
+                out = s_tracker.track(image)
+                state = [int(s) for s in out['target_bbox']]
+                root_s_tracker.h_path.append((state[0], state[1], state[2], state[3]))
 
-                    draw_history_path(image, s_tracker.h_path, num_point = 50)
+                temp = image[int(state[1]) : int(state[1] + state[3]), int(state[0]) : int(state[0] + state[2]), :]
+                if temp.shape[0] > 0 and temp.shape[1] > 0:
+                    ctx = state[0] + state[2]/2
+                    cty = state[1] + state[3]/2
+                    cv2.rectangle(image, (state[0], state[1]), (state[2] + state[0], state[3] + state[1]),
+                         (0, 0, 255), 2)
+                    draw_history_path(image, root_s_tracker.h_path, num_point = 50)
                     drone_ctx = ctx
                     drone_cty = cty
                 else:
@@ -1016,7 +1017,7 @@ def predict_new(
                         print('==========================delete tracker===================')
                 else:
                     counter = 0
-        
+
             tracker.update(object_prediction_list)
             frame = draw_dets(image, object_prediction_list)
         
