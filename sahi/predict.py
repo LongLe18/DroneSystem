@@ -37,7 +37,6 @@ from sahi.utils.cv import (
     get_video_reader,
     read_image_as_pil,
     visualize_object_predictions,
-    visualize_object_predictions_new,
     get_nearest_slice,
     draw_history_path,
     check_tracker,
@@ -46,8 +45,8 @@ from sahi.utils.cv import (
 )
 from sahi.utils.file import Path, increment_path, list_files, save_json, save_pickle
 from sahi.utils.import_utils import check_requirements
-from boxmot.sot.tracker import Single_tracker
-from boxmot.sort.tracker import Tracker
+from tracking.sot.tracker import Single_tracker
+from tracking.sort.tracker import Tracker
 
 POSTPROCESS_NAME_TO_CLASS = {
     "GREEDYNMM": GreedyNMMPostprocess,
@@ -929,14 +928,14 @@ def predict_new(
     frame_count = -1
     s_tracker = None
     counter = 0
-    frame_time = 0.03
+    prev_frame_time = 0
     object_prediction_list = []
-    lastFrameTime = time.time()
+    new_frame_time = 0
 
     for ind, image_path in enumerate(
         tqdm(image_iterator, f"Performing inference on {input_type_str}", total=num_frames)
-    ):
-        
+    ):     
+        new_frame_time = time.time()
         frame_count += 1
         single_track_mode = True
         drone_ctx = None
@@ -966,7 +965,7 @@ def predict_new(
                     ctx = left + wd/2
                     cty = top + ht/2
                     # cv2.line(image, (int(w / 2), int(h / 2)), (int(ctx), int(cty)), (0, 255, 255) ,2) # red
-                    cv2.rectangle(image, (int(left),  int(top)), (int(left + wd), int(top + ht)), (255, 0, 0), 2) # blue
+                    cv2.rectangle(image, (int(left),  int(top)), (int(left + wd), int(top + ht)), (0, 0, 255), 2) # blue
 
                     draw_history_path(image, s_tracker.h_path, num_point = 50)
                     drone_ctx = ctx
@@ -978,7 +977,7 @@ def predict_new(
         if frame_count % 10 == 0 or single_track_mode == False or s_tracker == None:
             # perform prediction
             if not no_sliced_prediction:
-                slice_window = get_nearest_slice(image_as_pil.size[0] // 2, slice)
+                slice_window = get_nearest_slice(image_as_pil.size[0] // 1.5, slice)
                 # get sliced prediction
                 prediction_result = get_sliced_prediction(
                     image=image_as_pil,
@@ -1027,15 +1026,16 @@ def predict_new(
                 tqdm.write(
                     "Prediction time is: {:.2f} ms".format(prediction_result.durations_in_seconds["prediction"] * 1000)
                 )
+        
         # export visualization
         if view_video:
 
-            end = time.time()
-            frame_time = frame_time + (end - lastFrameTime - frame_time) / 30.0
-            lastFrameTime = end
-            fps  = "FPS: {:.2f}".format(1.0 / frame_time)
+            fps = 1 / (new_frame_time - prev_frame_time)
+            prev_frame_time = new_frame_time
+            fps = int(fps)
+            fps  = "FPS: {}".format(str(fps))
             # frame = draw_sight(frame, int(h / 2), int(w / 2))
-            cv2.putText(frame, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+            cv2.putText(image, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
             k = cv2.waitKey(33)
             if k == 27:    # Esc key to stop

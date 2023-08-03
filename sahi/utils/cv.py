@@ -252,26 +252,26 @@ def get_video_reader(
 
             while video_capture.isOpened:
 
-                frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
-                video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num + frame_skip_interval)
+                # frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
+                # video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num + frame_skip_interval)
 
-                k = cv2.waitKey(20)
-                frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
+                # k = cv2.waitKey(20)
+                # frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
 
-                if k == 27:
-                    print(
-                        "\n===========================Closing==========================="
-                    )  # Exit the prediction, Key = Esc
-                    exit()
-                if k == 100:
-                    frame_num += 100  # Skip 100 frames, Key = d
-                if k == 97:
-                    frame_num -= 100  # Prev 100 frames, Key = a
-                if k == 103:
-                    frame_num += 20  # Skip 20 frames, Key = g
-                if k == 102:
-                    frame_num -= 20  # Prev 20 frames, Key = f
-                video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+                # if k == 27:
+                #     print(
+                #         "\n===========================Closing==========================="
+                #     )  # Exit the prediction, Key = Esc
+                #     exit()
+                # if k == 100:
+                #     frame_num += 100  # Skip 100 frames, Key = d
+                # if k == 97:
+                #     frame_num -= 100  # Prev 100 frames, Key = a
+                # if k == 103:
+                #     frame_num += 20  # Skip 20 frames, Key = g
+                # if k == 102:
+                #     frame_num -= 20  # Prev 20 frames, Key = f
+                # video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
 
                 ret, frame = video_capture.read()
                 if not ret:
@@ -281,8 +281,8 @@ def get_video_reader(
 
         else:
             while video_capture.isOpened:
-                frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
-                video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num + frame_skip_interval)
+                # frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
+                # video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num + frame_skip_interval)
 
                 ret, frame = video_capture.read()
                 if not ret:
@@ -571,117 +571,6 @@ def visualize_object_predictions(
     return {"image": image, "elapsed_time": elapsed_time}
 
 
-def visualize_object_predictions_new(
-    image: np.array,
-    object_prediction_list,
-    rect_th: int = None,
-    text_size: float = None,
-    text_th: float = None,
-    color: tuple = None,
-    tracking_model = None,
-):
-    
-    elapsed_time = time.time()
-    # deepcopy image so that original is not altered
-    image = copy.deepcopy(image)
-    # select predefined classwise color palette if not specified
-    if color is None:
-        colors = Colors()
-    else:
-        colors = None
-    # set rect_th for boxes
-    rect_th = rect_th or max(round(sum(image.shape) / 2 * 0.003), 2)
-    # set text_th for category names
-    text_th = text_th or max(rect_th - 1, 1)
-    # set text_size for category names
-    text_size = text_size or rect_th / 3
-
-    # add bboxes to image if present
-    for object_prediction in object_prediction_list:
-        # deepcopy object_prediction_list so that original is not altered
-        object_prediction = object_prediction.deepcopy()
-
-        bbox = object_prediction.bbox.to_xyxy()
-        category_name = object_prediction.category.name
-        score = object_prediction.score.value
-
-        # apply tracking
-        if (tracking_model != None):
-            if colors is not None:
-                color = colors(object_prediction.category.id)
-
-            dets = np.array([[int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]), score,  object_prediction.category.id]])
-            ts = tracking_model.update(dets, image) # update tracker
-
-            xyxys = ts[:, 0:4].astype('int') # float64 to int
-            ids = ts[:, 4].astype('int') # float64 to int
-
-            if ts.shape[0] != 0:
-                for xyxy, id, in zip(xyxys, ids):
-                    cv2.rectangle(
-                        image,
-                        (xyxy[0], xyxy[1]),
-                        (xyxy[2], xyxy[3]),
-                        color,  
-                        rect_th
-                    )
-
-                    label = f'{id} {score:.2f} {category_name}'
-                    w, h = cv2.getTextSize(label, 0, fontScale=text_size, thickness=text_th)[0]  # label width, height
-                    outside = xyxy[1] - h - 3 >= 0  # label fits outside box
-                    p2 = xyxy[0] + w, xyxy[1] - h - 3 if outside else xyxy[1] + h + 3
-
-                    cv2.rectangle(image, (xyxy[0], xyxy[1]), p2, color, -1, cv2.LINE_AA)  # filled
-                    cv2.putText(
-                        image,
-                        label,
-                        (xyxy[0], xyxy[1] - 2 if outside else xyxy[1] + h + 2),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        text_size,
-                        (255, 255, 255),
-                        thickness=text_th
-                    )
-            else:
-                print('--------------------- lost object ------------------')
-        else: 
-            # set color 
-            if colors is not None:
-                color = colors(object_prediction.category.id)
-            # set bbox points
-            p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
-            # visualize boxes
-            cv2.rectangle(
-                image,
-                p1,
-                p2,
-                color=color,
-                thickness=rect_th,
-            )
-
-            # arange bounding box text location
-            label = f"{category_name}"
-
-            label += f" {score:.2f}"
-
-            w, h = cv2.getTextSize(label, 0, fontScale=text_size, thickness=text_th)[0]  # label width, height
-            outside = p1[1] - h - 3 >= 0  # label fits outside box
-            p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
-            # add bounding box text
-            cv2.rectangle(image, p1, p2, color, -1, cv2.LINE_AA)  # filled
-            cv2.putText(
-                image,
-                label,
-                (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
-                0,
-                text_size,
-                (255, 255, 255),
-                thickness=text_th,
-            )
-
-    elapsed_time = time.time() - elapsed_time
-    return {"image": image, "elapsed_time": elapsed_time}
-
-
 def get_coco_segmentation_from_bool_mask(bool_mask):
     """
     Convert boolean mask to coco segmentation format
@@ -841,7 +730,7 @@ def draw_dets(image, dets):
 
         p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
         
-        cv2.rectangle(image, p1, p2, color=color, thickness=rect_th) # yellow
+        cv2.rectangle(image, p1, p2, color=color, thickness=rect_th) 
 
         label = f"{category_name}"
 

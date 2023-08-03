@@ -2,8 +2,8 @@ import torch
 import argparse
 from pathlib import Path
 from sahi.predict import  predict_new
-from boxmot.utils import logger as LOGGER
-from boxmot.utils.torch_utils import select_device
+from tracking.utils import logger as LOGGER
+from tracking.utils.torch_utils import select_device
 
 
 @torch.no_grad()
@@ -32,7 +32,7 @@ def parse_opt():
     parser.add_argument('--type-model', type=str, default='yolov8', help='yolo version')
     parser.add_argument('--yolo-model', type=Path, default='weights/detection/v8_small.pt', help='model.pt path(s)')
     parser.add_argument('--reid-model', type=Path, default='weights/tracking/osnet_x0_25_msmt17.pt')
-    parser.add_argument('--tracking-method', type=str, default='deepocsort', help='deepocsort, botsort, strongsort, ocsort, bytetrack')
+    parser.add_argument('--tracking-method', type=str, default='strongsort', help='deepocsort, botsort, strongsort, ocsort, bytetrack')
     parser.add_argument('--source', type=str, default='0', help='file/dir/URL/glob, 0 for webcam')  
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf', type=float, default=0.25, help='confidence threshold')
