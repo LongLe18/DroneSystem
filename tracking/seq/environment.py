@@ -89,7 +89,7 @@ def create_default_local_file_ITP_test(workspace_dir, data_dir, save_dir):
     with open(path, 'w') as f:
         settings = EnvSettings_ITP(workspace_dir, data_dir, save_dir)
 
-        f.write('from lib.test.evaluation.environment import EnvSettings\n\n')
+        f.write('from seq.environment import EnvSettings\n\n')
         f.write('def local_env_settings():\n')
         f.write('    settings = EnvSettings()\n\n')
         f.write('    # Set your local paths here.\n\n')

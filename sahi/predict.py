@@ -879,6 +879,7 @@ def predict_new(
             contains=IMAGE_EXTENSIONS,
             verbose=verbose,
         )
+        video_file_name = 'image'
     elif Path(source).suffix in VIDEO_EXTENSIONS:
         source_is_video = True
         read_video_frame, output_video_writer, video_file_name, num_frames = get_video_reader(
@@ -886,6 +887,7 @@ def predict_new(
         )
         image_iterator = read_video_frame
     else:
+        video_file_name = 'image'
         image_iterator = [source]
 
     # init model instance
@@ -934,7 +936,7 @@ def predict_new(
     
     for ind, image_path in enumerate(
         tqdm(image_iterator, f"Performing inference on {input_type_str}", total=num_frames)
-    ):     
+    ):  
         new_frame_time = time.time()
         frame_count += 1
         single_track_mode = True
@@ -1019,7 +1021,7 @@ def predict_new(
                     counter = 0
 
             tracker.update(object_prediction_list)
-            frame = draw_dets(image, object_prediction_list)
+            draw_dets(image, object_prediction_list)
         
             durations_in_seconds["prediction"] += prediction_result.durations_in_seconds["prediction"]
             # Show prediction time
@@ -1045,5 +1047,5 @@ def predict_new(
                 tracker.change_selected_track()
                 s_tracker = None
 
-            cv2.imshow("Prediction of {}".format(str(video_file_name)), image)
+            cv2.imshow("Prediction of {}".format(str(video_file_name)), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
             cv2.waitKey(1)

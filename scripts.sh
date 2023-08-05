@@ -1,6 +1,6 @@
-! python3 demo.py --type-model yolov8 \
-    --yolo-model weights/detection/v8_small.pt  \
-    --source /media/phuong/DATASET/data_uav/video/video5.mp4 \
+! python demo.py --type-model yolov8 \
+    --yolo-model weights/detection/v8_small.onnx  \
+    --source D:\\PracticePY\\Project\\Drone-2023\\data\\video1.avi \
     --conf 0.25  \
     --show \
     --apply-tracking

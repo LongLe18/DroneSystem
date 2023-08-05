@@ -1,10 +1,11 @@
 # OBSS SAHI Tool
-# Code written by AnNT, 2023.
+# Code written by Karl-Joan Alesma and Michael García, 2023.
 
 import logging
-from typing import Any, Dict, List, Optional
-
+from typing import Any, List, Optional
+import ast
 import numpy as np
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -12,40 +13,90 @@ from sahi.models.base import DetectionModel
 from sahi.prediction import ObjectPrediction
 from sahi.utils.compatibility import fix_full_shape_list, fix_shift_amount_list
 from sahi.utils.import_utils import check_requirements
+from ultralytics.yolo.utils import LOGGER, ops
+from ultralytics.yolo.engine.results import Results, LetterBox
 
 
-class Yolov8DetectionModel(DetectionModel):
-    def check_dependencies(self) -> None:
-        check_requirements(["ultralytics"])
+class ONNXDetectionModel(DetectionModel):
+    def __init__(self, *args, iou_threshold: float = 0.7, **kwargs):
+        """
+        Args:
+            iou_threshold: float
+                IOU threshold for non-max supression, defaults to 0.7.
+        """
+        super().__init__(*args, **kwargs)
+        self.metadata = None
+        self.output_names = []
+        self.iou_threshold = iou_threshold
 
     def load_model(self):
+        """Detection model is initialized and set to self.model.
+        Options for onnxruntime sessions can be passed as keyword arguments.
         """
-        Detection model is initialized and set to self.model.
-        """
-
-        from ultralytics import YOLO
-
+        import onnxruntime
         try:
-            model = YOLO(self.model_path)
-            model.to(self.device)
-            self.set_model(model)
+            w = str(self.model_path[0] if isinstance(self.model_path, list) else self.model_path)
+            LOGGER.info(f'Loading {w} for ONNX Runtime inference...')
+            cuda = torch.cuda.is_available() and self.device != 'cpu'  # use CUDA
+            check_requirements(('onnx', 'onnxruntime-gpu' if cuda else 'onnxruntime'))
+
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if cuda else ['CPUExecutionProvider']
+            session = onnxruntime.InferenceSession(w, providers=providers)
+            self.output_names = [x.name for x in session.get_outputs()]
+            self.metadata = session.get_modelmeta().custom_metadata_map  # metadata
+            self.set_model(session)
         except Exception as e:
-            raise TypeError("model_path is not a valid yolov8 model path: ", e)
+            raise TypeError("model_path is not a valid onnx model path: ", e)
 
     def set_model(self, model: Any):
         """
-        Sets the underlying YOLOv8 model.
+        Sets the underlying ONNX model.
         Args:
             model: Any
-                A YOLOv8 model
+                A ONNX model
         """
 
         self.model = model
-        
+
         # set category_mapping
         if not self.category_mapping:
-            category_mapping = {str(ind): category_name for ind, category_name in enumerate(self.category_names)}
+            category_mapping = {str(key): value for key, value in ast.literal_eval(self.category_names).items()}
             self.category_mapping = category_mapping
+    
+    def _preprocess_image(self, image):
+        """Prepapre image for inference by resizing, normalizing and changing dimensions.
+        Args:
+            image: np.ndarray
+                Input image with color channel order BGR.
+        """ 
+        if not isinstance(image, torch.Tensor):
+            image = np.stack([LetterBox([self.image_size, self.image_size], auto=False, stride=32)(image=x) for x in image])
+            image = image[..., ::-1].transpose((0, 3, 1, 2))  # BGR to RGB, BHWC to BCHW, (n, 3, h, w)
+            image = np.ascontiguousarray(image)  # contiguous
+            image = torch.from_numpy(image)
+
+        # NOTE: assuming im with (b, 3, h, w) if it's a tensor
+        img = image.to(self.device)
+        fp16 = False
+        img = img.half() if fp16 else img.float()  # uint8 to fp16/32
+        img /= 255  # 0 - 255 to 0.0 - 1.0
+        return img
+
+    def _post_process(self, preds, img, orig_imgs):
+        """Postprocesses predictions and returns a list of Results objects."""
+        preds = ops.non_max_suppression(preds,
+                                        self.confidence_threshold,
+                                        self.iou_threshold,
+                                        agnostic=False,
+                                        max_det=300,
+                                        classes=None)
+        results = []
+        for i, pred in enumerate(preds):
+            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
+            if not isinstance(orig_imgs, torch.Tensor):
+                pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
+            results.append(Results(orig_img=orig_img, path=None, names=self.category_mapping, boxes=pred))
+        return results
 
     def perform_inference(self, image: np.ndarray):
         """
@@ -54,10 +105,21 @@ class Yolov8DetectionModel(DetectionModel):
             image: np.ndarray
                 A numpy array that contains the image to be predicted. 3 channel image should be in RGB order.
         """
+    
         # Confirm model is loaded
         if self.model is None:
             raise ValueError("Model is not loaded, load it by calling .load_model()")
-        prediction_result = self.model(image[:, :, ::-1], verbose=False)  # YOLOv8 expects numpy arrays to have BGR
+
+        im = self._preprocess_image([image[:, :, ::-1]])
+        im = im.cpu().numpy()  # torch to numpy
+        y = self.model.run(self.output_names, {self.model.get_inputs()[0].name: im})
+
+        if isinstance(y, (list, tuple)):
+            outputs = self.from_numpy(y[0]) if len(y) == 1 else [self.from_numpy(x) for x in y]
+        else:
+            outputs = self.from_numpy(y)
+        prediction_result = self._post_process(outputs, im, [image[:, :, ::-1]])
+
         prediction_result = [
             result.boxes.data[result.boxes.data[:, 4] >= self.confidence_threshold] for result in prediction_result
         ]
@@ -65,21 +127,21 @@ class Yolov8DetectionModel(DetectionModel):
 
     @property
     def category_names(self):
-        return self.model.names.values()
-
+        return self.metadata['names']
+    
     @property
     def num_categories(self):
         """
         Returns number of categories
         """
-        return len(self.model.names)
+        return len(self.category_mapping)
 
     @property
     def has_mask(self):
         """
         Returns if model output contains segmentation mask
         """
-        return False  # fix when yolov5 supports segmentation models
+        return False
 
     def _create_object_prediction_list_from_original_predictions(
         self,
@@ -152,3 +214,16 @@ class Yolov8DetectionModel(DetectionModel):
             object_prediction_list_per_image.append(object_prediction_list)
 
         self._object_prediction_list_per_image = object_prediction_list_per_image
+
+    def from_numpy(self, x):
+        """
+         Convert a numpy array to a tensor.
+
+         Args:
+             x (np.ndarray): The array to be converted.
+
+         Returns:
+             (torch.Tensor): The converted tensor
+         """
+        return torch.tensor(x).to(self.device) if isinstance(x, np.ndarray) else x
+    
