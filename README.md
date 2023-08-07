@@ -31,7 +31,7 @@ pip install -r requirements.txt
 
 ### Preparation
 
-- 1 Setup for tracking object
+- Setup for tracking object
 
 Run the following command to set paths for this project
 ```
@@ -44,7 +44,7 @@ tracking/grm/local.py  # paths about training
 tracking/seq/local.py  # paths about testing
 ```
 
-- 2 Download weight for detection from [google drive]() and tracking object [GRM](https://github.com/Little-Podi/GRM/releases/download/downloads/Trained_Models.zip), [SEQTrack](https://github.com/microsoft/VideoX/blob/master/SeqTrack/MODEL_ZOO.md) models. And path of folder weight (at same root system) is like that
+- Download weight for detection from [google drive]() and tracking object [GRM](https://github.com/Little-Podi/GRM/releases/download/downloads/Trained_Models.zip), [SEQTrack](https://github.com/microsoft/VideoX/blob/master/SeqTrack/MODEL_ZOO.md) models. And path of folder weight (at same root system) is like that
 
 ```python
 DroneSystem
@@ -61,7 +61,7 @@ DroneSystem
 │   │   │   ├── .....
 ```
 
-- 3 Running Demo
+- Running Demo
 ```
 python demo.py --type-model yolov8 --yolo-model weights/detection/v8_small.onnx --source your_path --conf 0.25  --show --apply-tracking
 ```
