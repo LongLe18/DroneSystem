@@ -1,4 +1,4 @@
-! python demo.py --type-model yolov8 \
+! python demo.py --type-model onnx \
     --yolo-model weights/detection/v8_small.onnx  \
     --source D:\\PracticePY\\Project\\Drone-2023\\data\\video1.avi \
     --conf 0.25  \

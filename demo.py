@@ -5,7 +5,6 @@ from sahi.predict import predict_new
 from tracking.utils import logger as LOGGER
 from tracking.utils.torch_utils import select_device
 
-
 @torch.no_grad()
 def run(args):
     select_device(args['device'])
