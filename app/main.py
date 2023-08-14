@@ -88,7 +88,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.h_speed = 255
         if e.key() == Qt.Key_R:
             # change target
-            self.tracker.change_selected_track()
+            self.tracker.tracker.change_selected_track()
             self.single_track_mode = False
             self.s_tracker = None
             
@@ -110,6 +110,12 @@ class MainWindow(QtWidgets.QMainWindow):
             # stop
             self.h_speed = 0
 
+    def reset(self):
+        self.single_track_mode = False
+        self.s_tracker = None      
+        self.detections = []
+        self.tracker.root_s_tracker.h_path = []
+        
     def processVideo(self, frame):
         image_as_pil = read_image_as_pil(frame)
         image = np.ascontiguousarray(image_as_pil)
@@ -206,7 +212,6 @@ class MainWindow(QtWidgets.QMainWindow):
         cv2.putText(image_copy, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         return image_copy
     
-
     # view camera
     def getVideo(self):
         # read image in BGR format
@@ -221,8 +226,8 @@ class MainWindow(QtWidgets.QMainWindow):
         image_path = Image.fromarray(image)
         image = self.processVideo(image_path)
 
-        img_cp = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        self.videoWritter.write(img_cp)
+        # img_cp = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        self.videoWritter.write(image)
         # get image infos
         height, width, channel = image.shape
         step = channel * width
@@ -253,6 +258,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # if timer is stopped
         else:
             print("Dừng video")
+            self.image_label.setText('Chon video / camera ')
+            self.reset()
             # stop timer
             self.timerCamera.stop()
             # release video capture
