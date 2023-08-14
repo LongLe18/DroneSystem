@@ -8,10 +8,10 @@ import socket
 #create release: pyinstaller --onefile
 import numpy as np
 from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QApplication, QFileDialog
+from PyQt5.QtWidgets import QApplication, QFileDialog, QHBoxLayout, QLabel, QListWidgetItem, QWidget
 from PyQt5 import uic
 from PyQt5.QtGui import QImage
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtCore import QTimer
 
 # import Opencv module
@@ -32,6 +32,36 @@ from sahi.utils.cv import (
 )
 from sahi.predict import get_sliced_prediction
 
+class ObjectListItem(QWidget):
+    def __init__(self, image, name, index):
+        super().__init__()
+        self.index = index
+
+        layout = QHBoxLayout()
+
+        image_label = QLabel(self)
+        height, width, channel = image.shape
+        step = channel * width
+        # create QImage from image
+        qImg = QImage(image.data, width, height, step, QImage.Format_RGB888)
+        # show image in img_label
+        image_label.setPixmap(QPixmap.fromImage(qImg))
+        layout.addWidget(image_label)
+
+        self.name_label = QLabel(name, self)
+        self.name_label.setFont(QFont('Arial', 14))  # Set the font size to 14
+        layout.addWidget(self.name_label)
+
+        self.setLayout(layout)
+
+    def get_name(self):
+        # Implement this method to return the name data used to create the custom widget
+        # Return the name here
+        return self.name_label.text()
+    
+    def get_index(self):
+        return self.index
+    
 class MainWindow(QtWidgets.QMainWindow):
     # class constructor
     def __init__(self, *args, **kwargs):
@@ -62,12 +92,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.frame_count = -1
         self.lastFrameTime = time.time()
         # set control_bt callback clicked  function
-        # self.bt_video_main.clicked.connect(self.run_video_main)
+        # self.bt_video_main.clicked.connect(self.updateList)
         # self.bt_video_thermal.clicked.connect(self.run_video_thermal)
         self.bt_video_test.clicked.connect(self.run_video_test)
         self.frame_time = 0.03
 
         self.videoWritter = cv2.VideoWriter('out_vid_test4.mp4.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 20, self.image_dim)
+        self.object_list_widget.itemClicked.connect(self.itemClicked)
         self.counter = 0
 
     def keyPressEvent(self, e):
@@ -91,6 +122,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tracker.tracker.change_selected_track()
             self.single_track_mode = False
             self.s_tracker = None
+            self.tracker.root_s_tracker.h_path = []
             
         if e.key() == Qt.Key_F:
             # change target
@@ -198,6 +230,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.counter = 0
 
             self.tracker.tracker.update(dets)
+            self.updateList(dets, image)
             image_copy = draw_dets(image_copy, dets)
         
         if crop_drone is not None:
@@ -266,7 +299,37 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cap.release()
             # update control_bt text
             self.bt_video_test.setText("Chọn video")
-            
+
+    def itemClicked(self, item):
+        # This slot will be called when an item in the list is clicked
+        # You can use the item parameter to access the clicked item's data
+        custom_widget = self.object_list_widget.itemWidget(item)
+        if custom_widget:
+            # Do something with the custom widget's data
+            idx = custom_widget.get_index()    # Adjust this based on your custom widget's structure
+            self.tracker.tracker.specific_selected_track(idx)
+            self.single_track_mode = False
+            self.s_tracker = None
+            self.tracker.root_s_tracker.h_path = []
+            print("Clicked:", str(idx))
+            # Implement your desired action here
+
+    def updateList(self, list_objects, image):
+        self.object_list_widget.clear()
+
+        for idx, obj in enumerate(list_objects):
+            bbox = obj.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
+            temp = image[int(bbox[1]) : int(bbox[3]), int(bbox[0]) : int(bbox[2]), :]
+            crop_drone = cv2.resize(temp, (100, 80))
+
+            custom_widget = ObjectListItem(crop_drone, obj.category.name, idx)
+            item = QListWidgetItem(self.object_list_widget)
+            item.setSizeHint(custom_widget.sizeHint())
+            self.object_list_widget.addItem(item)
+            self.object_list_widget.setItemWidget(item, custom_widget)
+
+    
+
     # start/stop timer
     # def run_video_main(self):
     #     # if timer is stopped

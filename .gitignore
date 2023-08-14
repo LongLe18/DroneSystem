@@ -162,3 +162,8 @@ cython_debug/
 # weights
 weights
 runs
+
+
+# video
+*.avi
+*.mp4

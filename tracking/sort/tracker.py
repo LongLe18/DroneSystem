@@ -77,9 +77,12 @@ class Tracker(object):
             self.selected_track = self.selected_track + 1
         if(self.selected_track > len(self.trackList) - 1):
             self.selected_track = -1
-        
         else:
             self.selected_track = -1
+            
+    def specific_selected_track(self, index):
+        if(len(self.trackList) > 0):
+            self.selected_track = index
 
     def getSelectedTrack(self):
         if(self.selected_track >= 0):
@@ -103,7 +106,7 @@ class Tracker(object):
         for t in range(0, len(self.trackList)):
             # estimate new position of each tracks
             self.trackList[t].predict()
-            self.trackList[t].isSelected = (t==self.selected_track)
+            self.trackList[t].isSelected = (t == self.selected_track)
             # remove tracks that doesn't updated 
             if (self.trackList[t].hits) < -5:
                 to_del.append(t)
