@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1580</width>
+    <width>1380</width>
     <height>1024</height>
    </rect>
   </property>
@@ -112,7 +112,7 @@
       <widget class="QWidget" name="layoutWidget">
        <property name="geometry">
         <rect>
-         <x>1140</x>
+         <x>940</x>
          <y>0</y>
          <width>116</width>
          <height>101</height>
@@ -165,22 +165,6 @@
         </item>
        </layout>
       </widget>
-      <widget class="QLabel" name="image_label">
-       <property name="geometry">
-        <rect>
-         <x>130</x>
-         <y>0</y>
-         <width>1000</width>
-         <height>800</height>
-        </rect>
-       </property>
-       <property name="frameShape">
-        <enum>QFrame::Panel</enum>
-       </property>
-       <property name="text">
-        <string>TextLabel</string>
-       </property>
-      </widget>
       <widget class="QFrame" name="frame_3">
        <property name="geometry">
         <rect>
@@ -197,7 +181,7 @@
            <enum>QFrame::Panel</enum>
           </property>
           <property name="text">
-           <string>Góc tầm:</string>
+           <string>Tắt toàn bộ camera</string>
           </property>
          </widget>
         </item>
@@ -218,16 +202,6 @@
           </property>
           <property name="text">
            <string>Góc hướng mạn:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="1">
-         <widget class="QLabel" name="image_label_4">
-          <property name="frameShape">
-           <enum>QFrame::Panel</enum>
-          </property>
-          <property name="text">
-           <string>0</string>
           </property>
          </widget>
         </item>
@@ -268,6 +242,13 @@
           </property>
           <property name="text">
            <string>0</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QPushButton" name="bt_turnoffcamera">
+          <property name="text">
+           <string>Tắt toàn bộ</string>
           </property>
          </widget>
         </item>
@@ -348,8 +329,8 @@
       <widget class="QFrame" name="frame_5">
        <property name="geometry">
         <rect>
-         <x>1140</x>
-         <y>110</y>
+         <x>940</x>
+         <y>120</y>
          <width>112</width>
          <height>217</height>
         </rect>
@@ -468,12 +449,145 @@
       <widget class="QListWidget" name="object_list_widget">
        <property name="geometry">
         <rect>
-         <x>1280</x>
+         <x>1080</x>
          <y>0</y>
          <width>271</width>
          <height>801</height>
         </rect>
        </property>
+      </widget>
+      <widget class="QWidget" name="gridLayoutWidget">
+       <property name="geometry">
+        <rect>
+         <x>30</x>
+         <y>0</y>
+         <width>891</width>
+         <height>801</height>
+        </rect>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_7">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <item row="0" column="0">
+         <layout class="QVBoxLayout" name="verticalLayout_2">
+          <property name="spacing">
+           <number>0</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_4">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label_1">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Camera 1</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_2">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Camera 2</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_3">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Camera 3</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_2">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label_4">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Camera 4</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_5">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Came 5</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_6">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Camera 6</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label_7">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Camera 7</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_8">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Camera 8</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_9">
+              <property name="styleSheet">
+               <string notr="true">border: 1px solid black;</string>
+              </property>
+              <property name="text">
+               <string>Camera 9</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </item>
+       </layout>
       </widget>
      </widget>
     </item>

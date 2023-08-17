@@ -163,6 +163,8 @@ cython_debug/
 weights
 runs
 
+# tracking
+tracking
 
 # video
 *.avi

@@ -1,4 +1,4 @@
-import PySpin
+# import PySpin
 
 # import system module
 import sys
@@ -9,8 +9,7 @@ import numpy as np
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QApplication, QFileDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem, QWidget, QMessageBox
 from PyQt5 import uic
-from PyQt5.QtGui import QImage
-from PyQt5.QtGui import QPixmap, QFont
+from PyQt5.QtGui import QPixmap, QFont, QImage
 from PyQt5.QtCore import QTimer, QDateTime
 
 # import Opencv module
@@ -29,14 +28,11 @@ from sahi.utils.cv import (
 )
 from sahi.predict import get_sliced_prediction
 
-global continue_recording
-continue_recording = True
-
-system = PySpin.System.GetInstance()
-# Get current library version
-version = system.GetLibraryVersion()
-cam_list = system.GetCameras()
-print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
+# system = PySpin.System.GetInstance()
+# # Get current library version
+# version = system.GetLibraryVersion()
+# cam_list = system.GetCameras()
+# print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
 
 class MessageBox():
     def __init__(self, message):
@@ -72,7 +68,7 @@ class ObjectListItem(QWidget):
         self.name_label.setFont(QFont('Arial', 12))
         info_layout.addWidget(self.name_label)
 
-        self.accuracy_label = QLabel(f'Accuracy: {accuracy*100:.2f}%', self)
+        self.accuracy_label = QLabel(f'Độ chính xác: {accuracy*100:.2f}%', self)
         info_layout.addWidget(self.accuracy_label)
 
         self.time_label = QLabel(self)
@@ -85,7 +81,7 @@ class ObjectListItem(QWidget):
 
     def update_time(self):
         current_time = QDateTime.currentDateTime().toString('HH:mm:ss')
-        self.time_label.setText(f'Time: {current_time}')
+        self.time_label.setText(f'Thời gian: {current_time}')
 
     def get_name(self):
         return self.name_label.text()
@@ -118,6 +114,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timerCameraIR.timeout.connect(self.update_camera)
         self.timerCamera = QTimer()
         self.timerCamera.timeout.connect(self.getVideo)
+        self.timerCameraVisual = QTimer()
+        self.timerCameraVisual.timeout.connect(self.getVideo)
         self.timerControl = QTimer()
         self.timerControl.start(30)
         self.image_dim = (1000, 800)
@@ -126,8 +124,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lastFrameTime = time.time()
 
         # set control_bt callback clicked  function
-        # self.bt_video_main.clicked.connect(self.updateList)
-        self.bt_video_thermal.clicked.connect(self.run_video_thermal)
+        self.bt_video_main.clicked.connect(self.run_video_main)
+        # self.bt_video_thermal.clicked.connect(self.run_video_thermal)
         self.bt_video_test.clicked.connect(self.run_video_test)
         self.frame_time = 0.03
 
@@ -280,7 +278,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return image_copy
     
     # view camera
-    def getVideo(self):
+    def getVideo(self): 
         # read image in BGR format
         ret, image = self.cap.read()
         if(ret == False):
@@ -289,9 +287,9 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # convert image to RGB format
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, self.image_dim, interpolation = cv2.INTER_AREA)
-        image_path = Image.fromarray(image)
-        image = self.processVideo(image_path)
+        image = cv2.resize(image, (295, 265), interpolation = cv2.INTER_AREA)
+        # image_path = Image.fromarray(image)
+        # image = self.processVideo(image_path)
 
         self.videoWritter.write(image)
         # get image infos
@@ -300,7 +298,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # create QImage from image
         qImg = QImage(image.data, width, height, step, QImage.Format_RGB888)
         # show image in img_label
-        self.image_label.setPixmap(QPixmap.fromImage(qImg))
+        self.label_1.setPixmap(QPixmap.fromImage(qImg))
     
     def itemClicked(self, item):
         # This slot will be called when an item in the list is clicked
@@ -432,7 +430,7 @@ class MainWindow(QtWidgets.QMainWindow):
             cam_list.Clear()
             # Release system instance
             system.ReleaseInstance()
-            msg_box = MessageBox("Not enough cameras!")
+            msg_box = MessageBox("Không có camera!")
             msg_box.warning()
 
         self.cam = cam_list.GetByIndex(0)  # Assuming the first camera
@@ -479,7 +477,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # start timer
             self.timerCameraIR.start(30)
-            self.bt_video_thermal.setText("Dừng streaming")
+            self.bt_video_thermal.setText("Dừng stream")
             self.frame_count = -1
 
         else:
@@ -497,23 +495,23 @@ class MainWindow(QtWidgets.QMainWindow):
     """
 
     # start/stop timer
-    # def run_video_main(self):
-    #     # if timer is stopped
-    #     if not self.timerCamera.isActive():
-    #         # create video capture
-    #         self.cap = cv2.VideoCapture(0)
-    #         # start timer
-    #         self.timerCamera.start(30)
-    #         # update control_bt text
-    #         self.bt_video_test.setText("Stop")
-    #     # if timer is started
-    #     else:
-    #         # stop timer
-    #         self.timerCamera.stop()
-    #         # release video capture
-    #         self.cap.release()
-    #         # update control_bt text
-    #         self.bt_video_test.setText("Start")
+    def run_video_main(self):
+        # if timer is stopped
+        if not self.timerCameraVisual.isActive():
+            # create video capture
+            self.cap = cv2.VideoCapture(0)
+            # start timer
+            self.timerCameraVisual.start(30)
+            # update control_bt text
+            self.bt_video_main.setText("Tạm Dừng")
+        # if timer is started
+        else:
+            # stop timer
+            self.timerCameraVisual.stop()
+            # release video capture
+            self.cap.release()
+            # update control_bt text
+            self.bt_video_main.setText("Bắt đầu")
 
     
 
