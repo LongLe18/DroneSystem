@@ -1,24 +1,21 @@
-
+import PySpin
 
 # import system module
 import sys
 sys.path.append("..")
 from PyQt5.QtCore import Qt
-import socket
 #create release: pyinstaller --onefile
 import numpy as np
 from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QApplication, QFileDialog, QHBoxLayout, QLabel, QListWidgetItem, QWidget
+from PyQt5.QtWidgets import QApplication, QFileDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem, QWidget, QMessageBox
 from PyQt5 import uic
 from PyQt5.QtGui import QImage
 from PyQt5.QtGui import QPixmap, QFont
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QDateTime
 
 # import Opencv module
 import cv2
-import math
 import time
-import serial
 from PIL import Image
 from rt_detector import Detector
 from rt_tracker import Tracker
@@ -32,8 +29,31 @@ from sahi.utils.cv import (
 )
 from sahi.predict import get_sliced_prediction
 
+global continue_recording
+continue_recording = True
+
+system = PySpin.System.GetInstance()
+# Get current library version
+version = system.GetLibraryVersion()
+cam_list = system.GetCameras()
+print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
+
+class MessageBox():
+    def __init__(self, message):
+        self.msg_box = QMessageBox()
+        self.msg_box.setWindowTitle("Warning")
+        self.msg_box.setText(message)
+    
+    def warning(self):
+        self.msg_box.setIcon(QMessageBox.Warning)
+        self.msg_box.exec_()
+
+    def information(self):
+        self.msg_box.setIcon(QMessageBox.Information)
+        self.msg_box.exec_()
+
 class ObjectListItem(QWidget):
-    def __init__(self, image, name, index):
+    def __init__(self, image, name, index, accuracy):
         super().__init__()
         self.index = index
 
@@ -42,21 +62,32 @@ class ObjectListItem(QWidget):
         image_label = QLabel(self)
         height, width, channel = image.shape
         step = channel * width
-        # create QImage from image
         qImg = QImage(image.data, width, height, step, QImage.Format_RGB888)
-        # show image in img_label
         image_label.setPixmap(QPixmap.fromImage(qImg))
         layout.addWidget(image_label)
 
-        self.name_label = QLabel(name, self)
-        self.name_label.setFont(QFont('Arial', 14))  # Set the font size to 14
-        layout.addWidget(self.name_label)
+        info_layout = QVBoxLayout()  # New layout for info (name, accuracy, time)
 
+        self.name_label = QLabel(name, self)
+        self.name_label.setFont(QFont('Arial', 12))
+        info_layout.addWidget(self.name_label)
+
+        self.accuracy_label = QLabel(f'Accuracy: {accuracy*100:.2f}%', self)
+        info_layout.addWidget(self.accuracy_label)
+
+        self.time_label = QLabel(self)
+        self.update_time()  # Initialize the time label with current time
+        info_layout.addWidget(self.time_label)
+
+        layout.addLayout(info_layout)
         self.setLayout(layout)
 
+
+    def update_time(self):
+        current_time = QDateTime.currentDateTime().toString('HH:mm:ss')
+        self.time_label.setText(f'Time: {current_time}')
+
     def get_name(self):
-        # Implement this method to return the name data used to create the custom widget
-        # Return the name here
         return self.name_label.text()
     
     def get_index(self):
@@ -83,6 +114,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.detections = []
         
+        self.timerCameraIR = QTimer()
+        self.timerCameraIR.timeout.connect(self.update_camera)
         self.timerCamera = QTimer()
         self.timerCamera.timeout.connect(self.getVideo)
         self.timerControl = QTimer()
@@ -91,9 +124,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.blank_image = np.zeros((1000, 800, 3), np.uint8)
         self.frame_count = -1
         self.lastFrameTime = time.time()
+
         # set control_bt callback clicked  function
         # self.bt_video_main.clicked.connect(self.updateList)
-        # self.bt_video_thermal.clicked.connect(self.run_video_thermal)
+        self.bt_video_thermal.clicked.connect(self.run_video_thermal)
         self.bt_video_test.clicked.connect(self.run_video_test)
         self.frame_time = 0.03
 
@@ -259,7 +293,6 @@ class MainWindow(QtWidgets.QMainWindow):
         image_path = Image.fromarray(image)
         image = self.processVideo(image_path)
 
-        # img_cp = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         self.videoWritter.write(image)
         # get image infos
         height, width, channel = image.shape
@@ -269,6 +302,35 @@ class MainWindow(QtWidgets.QMainWindow):
         # show image in img_label
         self.image_label.setPixmap(QPixmap.fromImage(qImg))
     
+    def itemClicked(self, item):
+        # This slot will be called when an item in the list is clicked
+        # You can use the item parameter to access the clicked item's data
+        custom_widget = self.object_list_widget.itemWidget(item)
+        if custom_widget:
+            # Do something with the custom widget's data
+            idx = custom_widget.get_index()    # Adjust this based on your custom widget's structure
+            self.tracker.tracker.specific_selected_track(idx)
+            self.single_track_mode = False
+            self.s_tracker = None
+            self.tracker.root_s_tracker.h_path = []
+            print("Clicked:", str(idx))
+            # Implement your desired action here
+
+    def updateList(self, list_objects, image):
+        self.object_list_widget.clear()
+
+        for idx, obj in enumerate(list_objects):
+            bbox = obj.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
+            temp = image[int(bbox[1]) : int(bbox[3]), int(bbox[0]) : int(bbox[2]), :]
+            score = obj.score.value
+            crop_drone = cv2.resize(temp, (100, 80))
+
+            custom_widget = ObjectListItem(crop_drone, obj.category.name, idx, score)
+            item = QListWidgetItem(self.object_list_widget)
+            item.setSizeHint(custom_widget.sizeHint())
+            self.object_list_widget.addItem(item)
+            self.object_list_widget.setItemWidget(item, custom_widget)
+
     # start/stop timer
     def run_video_test(self):
         def run(video):
@@ -300,35 +362,139 @@ class MainWindow(QtWidgets.QMainWindow):
             # update control_bt text
             self.bt_video_test.setText("Chọn video")
 
-    def itemClicked(self, item):
-        # This slot will be called when an item in the list is clicked
-        # You can use the item parameter to access the clicked item's data
-        custom_widget = self.object_list_widget.itemWidget(item)
-        if custom_widget:
-            # Do something with the custom widget's data
-            idx = custom_widget.get_index()    # Adjust this based on your custom widget's structure
-            self.tracker.tracker.specific_selected_track(idx)
-            self.single_track_mode = False
-            self.s_tracker = None
-            self.tracker.root_s_tracker.h_path = []
-            print("Clicked:", str(idx))
-            # Implement your desired action here
+    """
+    Handle Camera thermal (FLIR Ax5)
+    """
+    def acquire_and_display_images(self, nodemap, nodemap_tldevice):
+        sNodemap = self.cam.GetTLStreamNodeMap()
 
-    def updateList(self, list_objects, image):
-        self.object_list_widget.clear()
+        # Change bufferhandling mode to NewestOnly
+        node_bufferhandling_mode = PySpin.CEnumerationPtr(sNodemap.GetNode('StreamBufferHandlingMode'))
+        if not PySpin.IsReadable(node_bufferhandling_mode) or not PySpin.IsWritable(node_bufferhandling_mode):
+            msg_box = MessageBox('Unable to set stream buffer handling mode.. Aborting...')
+            msg_box.warning()
 
-        for idx, obj in enumerate(list_objects):
-            bbox = obj.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
-            temp = image[int(bbox[1]) : int(bbox[3]), int(bbox[0]) : int(bbox[2]), :]
-            crop_drone = cv2.resize(temp, (100, 80))
+        # Retrieve entry node from enumeration node
+        node_newestonly = node_bufferhandling_mode.GetEntryByName('NewestOnly')
+        if not PySpin.IsReadable(node_newestonly):
+            msg_box = MessageBox('Unable to set stream buffer handling mode.. Aborting...')
+            msg_box.warning()
+        
+        # Retrieve integer value from entry node
+        node_newestonly_mode = node_newestonly.GetValue()
 
-            custom_widget = ObjectListItem(crop_drone, obj.category.name, idx)
-            item = QListWidgetItem(self.object_list_widget)
-            item.setSizeHint(custom_widget.sizeHint())
-            self.object_list_widget.addItem(item)
-            self.object_list_widget.setItemWidget(item, custom_widget)
+        # Set integer value from entry node as new value of enumeration node
+        node_bufferhandling_mode.SetIntValue(node_newestonly_mode)
 
+        print('*** IMAGE ACQUISITION ***\n')
+        try:
+            node_acquisition_mode = PySpin.CEnumerationPtr(nodemap.GetNode('AcquisitionMode'))
+            if not PySpin.IsReadable(node_acquisition_mode) or not PySpin.IsWritable(node_acquisition_mode):
+                msg_box = MessageBox('Unable to set acquisition mode to continuous (enum retrieval). Aborting...')
+                msg_box.warning()
+
+            # Retrieve entry node from enumeration node
+            node_acquisition_mode_continuous = node_acquisition_mode.GetEntryByName('Continuous')
+            if not PySpin.IsReadable(node_acquisition_mode_continuous):
+                msg_box = MessageBox('Unable to set acquisition mode to continuous (entry retrieval). Aborting...')
+                msg_box.warning()
+
+            # Retrieve integer value from entry node
+            acquisition_mode_continuous = node_acquisition_mode_continuous.GetValue()
+
+            # Set integer value from entry node as new value of enumeration node
+            node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
+
+            print('Acquisition mode set to continuous...')
+
+            #  *** LATER ***
+            #  Image acquisition must be ended when no more images are needed.
+            self.cam.BeginAcquisition() # Start the camera stream
+            print('Acquiring images...')
+
+            device_serial_number = ''
+            node_device_serial_number = PySpin.CStringPtr(nodemap_tldevice.GetNode('DeviceSerialNumber'))
+            if PySpin.IsReadable(node_device_serial_number):
+                device_serial_number = node_device_serial_number.GetValue()
+                print('Device serial number retrieved as %s...' % device_serial_number)
+
+        except PySpin.SpinnakerException as ex:
+            print('Error: %s' % ex)
+
+    def initialize_camera(self):
+        # Retrieve list of cameras from the system
+        num_cameras = cam_list.GetSize()
+        print('Number of cameras detected: %d' % num_cameras)
+        
+        # Finish if there are no cameras
+        if num_cameras == 0:
+            # Clear camera list before releasing system
+            cam_list.Clear()
+            # Release system instance
+            system.ReleaseInstance()
+            msg_box = MessageBox("Not enough cameras!")
+            msg_box.warning()
+
+        self.cam = cam_list.GetByIndex(0)  # Assuming the first camera
+        self.cam.Init()
+        nodemap_tldevice = self.cam.GetTLDeviceNodeMap()
+        nodemap = self.cam.GetNodeMap()
+        self.acquire_and_display_images(nodemap, nodemap_tldevice)
+
+    def update_camera(self):
+        image = self.capture_image()
+        detected_image = self.processThermalCamera(image)
+        q_detected_image = self.convert_image_to_qimage(detected_image)
+        self.image_label.setPixmap(QPixmap.fromImage(q_detected_image))
+
+    def processThermalCamera(self, image):
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        image = cv2.resize(image, self.image_dim, interpolation = cv2.INTER_AREA) # resize image (1000, 800)
+
+        # handle frame of video with model
+        image_path = Image.fromarray(image)
+        image = self.processVideo(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        # write video
+        self.videoWritter.write(image)
+        return image
+
+    def capture_image(self):
+        img = self.cam.GetNextImage()  # Capture an image with a timeout of 1000 milliseconds
+        image_data = img.GetNDArray()  # Get image data as numpy array
+        img.Release()  # Release the image to free resources
+        return image_data
     
+    def convert_image_to_qimage(self, image):
+        height, width = image.shape
+        q_image = QImage(image.data, width, height, QImage.Format_Grayscale8)
+        return q_image
+    
+    def run_video_thermal(self):
+        # if timer is stopped
+        if not self.timerCameraIR.isActive():
+
+            self.initialize_camera()  # Initialize the camera and start the stream
+
+            # start timer
+            self.timerCameraIR.start(30)
+            self.bt_video_thermal.setText("Dừng streaming")
+            self.frame_count = -1
+
+        else:
+            # stop timer
+            self.timerCameraIR.stop()
+            # update control_bt text
+            self.bt_video_thermal.setText("Camera nhiệt")
+
+            self.cam.EndAcquisition()  # End the camera stream
+            self.cam.DeInit()  # Deinitialize the camera
+            del self.cam
+            
+    """
+    END Functions for FLIR camera
+    """
 
     # start/stop timer
     # def run_video_main(self):
@@ -349,23 +515,7 @@ class MainWindow(QtWidgets.QMainWindow):
     #         # update control_bt text
     #         self.bt_video_test.setText("Start")
 
-    # def run_video_thermal(self):
-    #     # if timer is stopped
-    #     if not self.timerCamera.isActive():
-    #         # create video capture
-    #         self.cap = cv2.VideoCapture(1)
-    #         # start timer
-    #         self.timerCamera.start(30)
-    #         # update control_bt text
-    #         self.bt_video_thermal.setText("Stop")
-    #     # if timer is started
-    #     else:
-    #         # stop timer
-    #         self.timerCamera.stop()
-    #         # release video capture
-    #         self.cap.release()
-    #         # update control_bt text
-    #         self.bt_video_thermal.setText("Start")
+    
 
 
 if __name__ == '__main__':

@@ -2,17 +2,6 @@ import time
 from tracking.utils import logger as LOGGER
 from sahi.auto_model import AutoDetectionModel
 from tracking.utils.torch_utils import select_device
-from sahi.utils.cv import (
-    IMAGE_EXTENSIONS,
-    VIDEO_EXTENSIONS,
-    cv2,
-    get_video_reader,
-    read_image_as_pil,
-    get_nearest_slice,
-    draw_history_path,
-    check_tracker,
-    draw_dets,
-)
 
 LOW_MODEL_CONFIDENCE = 0.1
 
