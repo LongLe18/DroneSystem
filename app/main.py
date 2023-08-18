@@ -1,4 +1,4 @@
-# import PySpin
+import PySpin
 
 # import system module
 import sys
@@ -28,11 +28,11 @@ from sahi.utils.cv import (
 )
 from sahi.predict import get_sliced_prediction
 
-# system = PySpin.System.GetInstance()
-# # Get current library version
-# version = system.GetLibraryVersion()
-# cam_list = system.GetCameras()
-# print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
+system = PySpin.System.GetInstance()
+# Get current library version
+version = system.GetLibraryVersion()
+cam_list = system.GetCameras()
+print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
 
 class MessageBox():
     def __init__(self, message):
@@ -125,7 +125,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # set control_bt callback clicked  function
         self.bt_video_main.clicked.connect(self.run_video_main)
-        # self.bt_video_thermal.clicked.connect(self.run_video_thermal)
+        self.bt_video_thermal.clicked.connect(self.run_video_thermal)
         self.bt_video_test.clicked.connect(self.run_video_test)
         self.frame_time = 0.03
 
