@@ -1,11 +1,12 @@
 import sys
+import threading
 sys.path.append("..")
 
 from PyQt5 import uic
 import numpy as np
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
-from PyQt5.QtCore import QTimer, QDateTime
+from PyQt5.QtCore import QTimer, QDateTime, pyqtSignal
 from PyQt5.QtWidgets import QFileDialog, QApplication, QMessageBox, QListWidgetItem, QHBoxLayout, QWidget, QLabel, QVBoxLayout
 from PyQt5.QtGui import QPixmap, QImage, QFont
 import PySpin
@@ -31,6 +32,7 @@ version = system.GetLibraryVersion()
 cam_list = system.GetCameras()
 print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
 
+                
 class MessageBox():
     def __init__(self, message):
         self.msg_box = QMessageBox()
@@ -87,11 +89,22 @@ class ObjectListItem(QWidget):
         return self.index
     
 class CameraDialog(QtWidgets.QDialog):
-    def __init__(self, cap, processVideo):
+
+    def __init__(self, cap, detector, tracker, selectSlicing, updateList):
         super().__init__()
 
+        self.detector = detector
+        self.tracker = tracker
+        self.selectSlicing = selectSlicing
+        self.updateList = updateList
+        self.frame_count = -1
+        self.counter = 0
+        self.frame_time = 0.03
         self.image_dim = (1000, 800)
-        self.processVideo = processVideo
+        self.detections = []
+        self.s_tracker = None
+        self.single_track_mode = False
+
         self.setWindowTitle("Camera Feed")
 
         # Create a QLabel for displaying the camera feed
@@ -100,11 +113,111 @@ class CameraDialog(QtWidgets.QDialog):
 
         # Start the camera feed in the label
         self.cap = cap
-        self.timer = QtCore.QTimer(self)
+        self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_camera_feed)
         self.timer.start(30)
 
+        self.lastFrameTime = time.time()
+
+    def processVideo(self, frame):
+        image_as_pil = read_image_as_pil(frame)
+        image = np.ascontiguousarray(image_as_pil)
+        image_copy = np.copy(image)
+        h, w, _ = image.shape
+        
+        crop_drone = None
+        drone_ctx = None
+        drone_cty = None
+
+        self.frame_count += 1
+
+        self.single_track_mode = True
+        if (self.single_track_mode):
+            if(self.s_tracker == None): # init new single tracker
+                if len(self.detections) > 0:
+                    obj_for_tracking = self.detections[0]
+                    bbox = obj_for_tracking.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
+                    p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
+                    self.s_tracker = self.tracker.create_tracker()
+                    self.s_tracker.initialize(image_copy, {'init_bbox': [p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1]]}) # (xmin, ymin, width, height)
+                else:
+                    self.single_track_mode = False
+                    self.s_tracker = None      
+            else: # update existing single tracker
+                
+                out = self.s_tracker.track(image_copy)
+                state = [int(s) for s in out['target_bbox']]
+                # self.tracker.root_s_tracker.h_path.append((state[0], state[1], state[2], state[3]))
+
+                temp = image_copy[int(state[1]) : int(state[1] + state[3]), int(state[0]) : int(state[0] + state[2]), :]
+                if temp.shape[0] > 0 and temp.shape[1] > 0:
+                    crop_drone = temp
+                    crop_drone = cv2.resize(crop_drone, (100, 80))
+                    ctx = state[0] + state[2]/2
+                    cty = state[1] + state[3]/2
+                    # dx = float(ctx - w / 2) / w
+                    # dy = float(cty - h / 2) / h
+                    # gimbal_motion((dx, dy))
+                    cv2.line(image_copy, (int(w / 2), int(h / 2)), (int(ctx), int(cty)), (0, 255, 255) ,2) # blue
+                    cv2.rectangle(image_copy, (state[0], state[1]), (state[2] + state[0], state[3] + state[1]),
+                         (0, 0, 255), 2)
+
+                    # draw_history_path(image_copy, self.tracker.root_s_tracker.h_path, num_point = 50)
+                    drone_ctx = ctx
+                    drone_cty = cty
+                else:
+                    self.single_track_mode = False
+                    self.s_tracker = None
+                    print('---------------------lost object------------------')
+        if self.frame_count % 50 == 0 or self.single_track_mode == False or self.s_tracker == None:
+            # perform prediction
+            prediction_result = get_sliced_prediction(
+                image=image_as_pil,
+                detection_model=self.detector.detection_model,
+                slice_height=int(self.selectSlicing),
+                slice_width=int(self.selectSlicing),
+                overlap_height_ratio=0.2,
+                overlap_width_ratio=0.2,
+                perform_standard_pred=not False,
+                postprocess_type="GREEDYNMM",
+                postprocess_match_metric="IOS",
+                postprocess_match_threshold=0.5,
+                postprocess_class_agnostic=False,
+                verbose=1 if 1 else 0,
+            )
+
+            dets = prediction_result.object_prediction_list
+            self.detections = dets
+            
+            if drone_cty != None and len(dets) > 0:
+                if not check_tracker((drone_ctx, drone_cty), dets, thresh=5): # check_tracker return false
+                    self.counter += 1
+                    if self.counter > 5: # neu dang track object co toa do khac xa toa do detect duoc qua 5 frame
+                        self.s_tracker = None
+                        self.counter = 0
+                        print('==========================delete tracker===================')
+                else:
+                    # pass
+                    self.counter = 0
+
+            self.tracker.tracker.update(dets)
+            self.updateList(dets, image)
+            image_copy = draw_dets(image_copy, dets)
+        
+        if crop_drone is not None:
+            image_copy[20:100, 880:980] = crop_drone
+
+        # fps
+        end = time.time()
+        self.frame_time = self.frame_time + (end - self.lastFrameTime - self.frame_time) / 30.0
+        self.lastFrameTime = end
+        fps  = "FPS: {:.2f}".format(1.0 / self.frame_time)
+        image_copy = draw_sight(image_copy, int(self.image_dim[0 ]/ 2), int(self.image_dim[1] / 2))
+        cv2.putText(image_copy, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        return image_copy
+    
     def update_camera_feed(self):
+
         ret, frame = self.cap.read()
         if ret:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -122,10 +235,20 @@ class CameraDialog(QtWidgets.QDialog):
             self.close()
 
 class CameraDialogIR(QtWidgets.QDialog):
-    def __init__(self, cam):
+    def __init__(self, cam, detector, tracker, selectSlicing, updateList):
         super().__init__()
 
+        self.detector = detector
+        self.tracker = tracker
+        self.selectSlicing = selectSlicing
+        self.updateList = updateList
+        self.frame_count = -1
+        self.counter = 0
+        self.frame_time = 0.03
         self.image_dim = (1000, 800)
+        self.detections = []
+        self.s_tracker = None
+        self.single_track_mode = False
         self.setWindowTitle("Camera Feed IR")
 
         # Create a QLabel for displaying the camera feed
@@ -138,6 +261,105 @@ class CameraDialogIR(QtWidgets.QDialog):
         self.timer.timeout.connect(self.update_camera)
         self.timer.start(30)
 
+        self.lastFrameTime = time.time()
+
+    def processVideo(self, frame):
+        image_as_pil = read_image_as_pil(frame)
+        image = np.ascontiguousarray(image_as_pil)
+        image_copy = np.copy(image)
+        h, w, _ = image.shape
+        
+        crop_drone = None
+        drone_ctx = None
+        drone_cty = None
+
+        self.frame_count += 1
+
+        self.single_track_mode = True
+        if (self.single_track_mode):
+            if(self.s_tracker == None): # init new single tracker
+                if len(self.detections) > 0:
+                    obj_for_tracking = self.detections[0]
+                    bbox = obj_for_tracking.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
+                    p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
+                    self.s_tracker = self.tracker.create_tracker()
+                    self.s_tracker.initialize(image_copy, {'init_bbox': [p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1]]}) # (xmin, ymin, width, height)
+                else:
+                    self.single_track_mode = False
+                    self.s_tracker = None      
+            else: # update existing single tracker
+                
+                out = self.s_tracker.track(image_copy)
+                state = [int(s) for s in out['target_bbox']]
+                # self.tracker.root_s_tracker.h_path.append((state[0], state[1], state[2], state[3]))
+
+                temp = image_copy[int(state[1]) : int(state[1] + state[3]), int(state[0]) : int(state[0] + state[2]), :]
+                if temp.shape[0] > 0 and temp.shape[1] > 0:
+                    crop_drone = temp
+                    crop_drone = cv2.resize(crop_drone, (100, 80))
+                    ctx = state[0] + state[2]/2
+                    cty = state[1] + state[3]/2
+                    # dx = float(ctx - w / 2) / w
+                    # dy = float(cty - h / 2) / h
+                    # gimbal_motion((dx, dy))
+                    cv2.line(image_copy, (int(w / 2), int(h / 2)), (int(ctx), int(cty)), (0, 255, 255) ,2) # blue
+                    cv2.rectangle(image_copy, (state[0], state[1]), (state[2] + state[0], state[3] + state[1]),
+                         (0, 0, 255), 2)
+
+                    # draw_history_path(image_copy, self.tracker.root_s_tracker.h_path, num_point = 50)
+                    drone_ctx = ctx
+                    drone_cty = cty
+                else:
+                    self.single_track_mode = False
+                    self.s_tracker = None
+                    print('---------------------lost object------------------')
+        if self.frame_count % 50 == 0 or self.single_track_mode == False or self.s_tracker == None:
+            # perform prediction
+            prediction_result = get_sliced_prediction(
+                image=image_as_pil,
+                detection_model=self.detector.detection_model,
+                slice_height=int(self.selectSlicing),
+                slice_width=int(self.selectSlicing),
+                overlap_height_ratio=0.2,
+                overlap_width_ratio=0.2,
+                perform_standard_pred=not False,
+                postprocess_type="GREEDYNMM",
+                postprocess_match_metric="IOS",
+                postprocess_match_threshold=0.5,
+                postprocess_class_agnostic=False,
+                verbose=1 if 1 else 0,
+            )
+
+            dets = prediction_result.object_prediction_list
+            self.detections = dets
+            
+            if drone_cty != None and len(dets) > 0:
+                if not check_tracker((drone_ctx, drone_cty), dets, thresh=5): # check_tracker return false
+                    self.counter += 1
+                    if self.counter > 5: # neu dang track object co toa do khac xa toa do detect duoc qua 5 frame
+                        self.s_tracker = None
+                        self.counter = 0
+                        print('==========================delete tracker===================')
+                else:
+                    # pass
+                    self.counter = 0
+
+            self.tracker.tracker.update(dets)
+            self.updateList(dets, image)
+            image_copy = draw_dets(image_copy, dets)
+        
+        if crop_drone is not None:
+            image_copy[20:100, 880:980] = crop_drone
+
+        # fps
+        end = time.time()
+        self.frame_time = self.frame_time + (end - self.lastFrameTime - self.frame_time) / 30.0
+        self.lastFrameTime = end
+        fps  = "FPS: {:.2f}".format(1.0 / self.frame_time)
+        image_copy = draw_sight(image_copy, int(self.image_dim[0 ]/ 2), int(self.image_dim[1] / 2))
+        cv2.putText(image_copy, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        return image_copy
+    
     def update_camera(self):
         image = self.capture_image()
         detected_image = self.processThermalCamera(image)
@@ -145,13 +367,13 @@ class CameraDialogIR(QtWidgets.QDialog):
         self.label.setPixmap(QPixmap.fromImage(q_detected_image))
 
     def processThermalCamera(self, image):
-        # image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         image = cv2.resize(image, self.image_dim, interpolation = cv2.INTER_AREA) # resize image (1000, 800)
 
         # handle frame of video with model
-        # image_path = Image.fromarray(image)
-        # image = self.processVideo(image_path)
-        # image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        image_path = Image.fromarray(image)
+        image = self.processVideo(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
         return image
 
@@ -179,14 +401,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tracker = Tracker()
         self.tracker.init_model()
 
-        self.s_tracker = None
-        self.single_track_mode = False
-
-        self.detections = []
-        self.frame_count = -1
-        self.frame_time = 0.03
-        self.image_dim = (1000, 800)
-        
         self.timerCamera1 = QTimer()
         self.timerCamera1.timeout.connect(self.getVideo)
         self.timerCamera2 = QTimer()
@@ -255,8 +469,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # Store the label and context menu in a dictionary
             self.label_menus[label_widget] = label_context_menu
 
-        self.lastFrameTime = time.time()
-
+        self.lastFrameTime = time.time()    
+    
     def updateList(self, list_objects, image):
         self.object_list_widget.clear()
 
@@ -272,105 +486,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.object_list_widget.addItem(item)
             self.object_list_widget.setItemWidget(item, custom_widget)
 
-    def processVideo(self, frame):
-        image_as_pil = read_image_as_pil(frame)
-        image = np.ascontiguousarray(image_as_pil)
-        image_copy = np.copy(image)
-        h, w, _ = image.shape
-        
-        crop_drone = None
-        drone_ctx = None
-        drone_cty = None
-
-        self.frame_count += 1
-
-        self.single_track_mode = True
-        if (self.single_track_mode):
-            if(self.s_tracker == None): # init new single tracker
-                if len(self.detections) > 0:
-                    obj_for_tracking = self.detections[0]
-                    bbox = obj_for_tracking.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
-                    p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
-                    self.s_tracker = self.tracker.create_tracker()
-                    self.s_tracker.initialize(image_copy, {'init_bbox': [p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1]]}) # (xmin, ymin, width, height)
-                else:
-                    self.single_track_mode = False
-                    self.s_tracker = None      
-            else: # update existing single tracker
-                
-                out = self.s_tracker.track(image_copy)
-                state = [int(s) for s in out['target_bbox']]
-                self.tracker.root_s_tracker.h_path.append((state[0], state[1], state[2], state[3]))
-
-                temp = image_copy[int(state[1]) : int(state[1] + state[3]), int(state[0]) : int(state[0] + state[2]), :]
-                if temp.shape[0] > 0 and temp.shape[1] > 0:
-                    crop_drone = temp
-                    crop_drone = cv2.resize(crop_drone, (100, 80))
-                    ctx = state[0] + state[2]/2
-                    cty = state[1] + state[3]/2
-                    # dx = float(ctx - w / 2) / w
-                    # dy = float(cty - h / 2) / h
-                    # gimbal_motion((dx, dy))
-                    cv2.line(image_copy, (int(w / 2), int(h / 2)), (int(ctx), int(cty)), (0, 255, 255) ,2) # blue
-                    cv2.rectangle(image_copy, (state[0], state[1]), (state[2] + state[0], state[3] + state[1]),
-                         (0, 0, 255), 2)
-
-                    draw_history_path(image_copy, self.tracker.root_s_tracker.h_path, num_point = 50)
-                    drone_ctx = ctx
-                    drone_cty = cty
-                else:
-                    self.single_track_mode = False
-                    self.s_tracker = None
-                    print('---------------------lost object------------------')
-        if self.frame_count % 50 == 0 or self.single_track_mode == False or self.s_tracker == None:
-            # perform prediction
-            prediction_result = get_sliced_prediction(
-                image=image_as_pil,
-                detection_model=self.detector.detection_model,
-                slice_height=int(self.selectSlicing.currentText()),
-                slice_width=int(self.selectSlicing.currentText()),
-                overlap_height_ratio=0.2,
-                overlap_width_ratio=0.2,
-                perform_standard_pred=not False,
-                postprocess_type="GREEDYNMM",
-                postprocess_match_metric="IOS",
-                postprocess_match_threshold=0.5,
-                postprocess_class_agnostic=False,
-                verbose=1 if 1 else 0,
-            )
-
-            dets = prediction_result.object_prediction_list
-            self.detections = dets
-            
-            if drone_cty != None and len(dets) > 0:
-                if not check_tracker((drone_ctx, drone_cty), dets, thresh=5): # check_tracker return false
-                    self.counter += 1
-                    if self.counter > 5: # neu dang track object co toa do khac xa toa do detect duoc qua 5 frame
-                        self.s_tracker = None
-                        self.counter = 0
-                        print('==========================delete tracker===================')
-                else:
-                    # pass
-                    self.counter = 0
-
-            self.tracker.tracker.update(dets)
-            self.updateList(dets, image)
-            image_copy = draw_dets(image_copy, dets)
-        
-        if crop_drone is not None:
-            image_copy[20:100, 880:980] = crop_drone
-
-        # fps
-        end = time.time()
-        self.frame_time = self.frame_time + (end - self.lastFrameTime - self.frame_time) / 30.0
-        self.lastFrameTime = end
-        fps  = "FPS: {:.2f}".format(1.0 / self.frame_time)
-        image_copy = draw_sight(image_copy, int(self.image_dim[0 ]/ 2), int(self.image_dim[1] / 2))
-        cv2.putText(image_copy, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-        return image_copy
-    
     def getVideo(self): 
-        for camera_idx, cap in self.cap.items():
+        for camera_idx, cap in self.cap.copy().items():
             if camera_idx == 2: continue
             ret, image = cap.read()
             if(ret == False):
@@ -408,6 +525,7 @@ class MainWindow(QtWidgets.QMainWindow):
     
         if video_file:
             print(f"Selected video file: {video_file}")
+            cap = cv2.VideoCapture(video_file)
             for camera_idx, label_widget in self.camera_labels.items():
                 if camera_idx in self.active_cameras or camera_idx == 2:
                     continue
@@ -571,14 +689,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def open_camera_dialog(self, camera_index, ir=False):
         print("Opening camera dialog")
         if ir:
-            camera_dialog = CameraDialogIR(camera_index)
-            camera_dialog.show()
-            camera_dialog.exec_()
+            camera_dialog = CameraDialogIR(camera_index, detector=self.detector, tracker=self.tracker, 
+                                         selectSlicing=self.selectSlicing.currentText(), updateList=self.updateList)
         else: 
-            camera_dialog = CameraDialog(camera_index, processVideo=self.processVideo)
-            camera_dialog.show()
-            camera_dialog.exec_()
-
+            camera_dialog = CameraDialog(camera_index, detector=self.detector, tracker=self.tracker,
+                                         selectSlicing=self.selectSlicing.currentText(), updateList=self.updateList)
+        camera_dialog.show()
+        camera_dialog.exec_()
+    
     def show_label_context_menu(self, pos):
         label = self.sender()  # Get the label that triggered the event
         if label in self.label_menus:
@@ -595,6 +713,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     if (int(selected_label_index) == 2):
                         self.open_camera_dialog(self.cam, True)
                     else:
+                        # stop timer main window
+                        self.camera_timers[int(selected_label_index)].stop()
+                        # open dialog for object detection
                         self.open_camera_dialog(self.cap[int(selected_label_index)])
 
                 elif selected_action == label_context_menu.actions()[1]:  # Tool 2 action
@@ -614,7 +735,6 @@ class MainWindow(QtWidgets.QMainWindow):
                         self.cap.pop(int(selected_label_index))
                     print(f"Tool 2 chosen for label {selected_label_index}")
 
-    
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 

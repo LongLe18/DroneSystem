@@ -6,15 +6,15 @@ from tracking.utils.torch_utils import select_device
 LOW_MODEL_CONFIDENCE = 0.1
 
 MODEL_TYPE_TO_WEIGHT = {
-    "yolov8": "../weights/detection/v8_small.pt",
-    "onnx": "../weights/detection/v8_small.onnx",
+    "yolov8": "../weights/detection/1280v8m.pt",
+    "onnx": "../weights/detection/1280v8m.onnx",
 }
 
 class Detector:
     def __init__(self, model_type: str = 'onnx', 
                  model_confidence_threshold: float = 0.25,
                  model_device: str = 'cuda:0',
-                 image_size: int = 640):
+                 image_size: int = 1280):
         
         self.model_type = model_type
         self.model_confidence_threshold = model_confidence_threshold
