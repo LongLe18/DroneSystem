@@ -30,7 +30,7 @@ def parse_opt():
     parser.add_argument('--type-model', type=str, default='onnx', help='type model: onnx, yolov8, mmdet, ...')
     parser.add_argument('--yolo-model', type=Path, default='weights/detection/v8_small.onnx', help='model.onnx path(s)')
     parser.add_argument('--source', type=str, default='0', help='file/dir/URL/glob, 0 for webcam')  
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=640, help='inference size h,w')
+    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=1280, help='inference size h,w')
     parser.add_argument('--conf', type=float, default=0.25, help='confidence threshold object detection')
     parser.add_argument('--iou', type=float, default=0.7, help='intersection over union (IoU) threshold for NMS')
     parser.add_argument('--device', default='cuda:0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')

@@ -1,9 +1,9 @@
 ! python demo.py --type-model onnx \
-    --yolo-model weights/detection/v8_small.onnx  \
-    --source D:\\PracticePY\\Project\\Drone-2023\\data\\video1.avi \
+    --yolo-model weights/detection/yolov8_drone.onnx  \
+    --source /media/phuong/DATASET/data_uav/video/V_DRONE_030.mp4 \
     --conf 0.25  \
     --show \
-    --apply-tracking
+    --apply-tracking \
 
 # demo sequence tracking
 # python3 demoSeq.py seqtrack seqtrack_b256 --video_path /media/phuong/DATASET/data_uav/video/video6.mp4

@@ -6,7 +6,7 @@ from PyQt5 import uic
 import numpy as np
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
-from PyQt5.QtCore import QTimer, QDateTime, pyqtSignal
+from PyQt5.QtCore import QTimer, QDateTime, Qt
 from PyQt5.QtWidgets import QFileDialog, QApplication, QMessageBox, QListWidgetItem, QHBoxLayout, QWidget, QLabel, QVBoxLayout
 from PyQt5.QtGui import QPixmap, QImage, QFont
 import PySpin
@@ -24,7 +24,7 @@ from sahi.utils.cv import (
     draw_dets,
     draw_sight,
 )
-from sahi.predict import get_sliced_prediction
+from sahi.predict import get_sliced_prediction, get_prediction
 
 system = PySpin.System.GetInstance()
 # Get current library version
@@ -119,6 +119,21 @@ class CameraDialog(QtWidgets.QDialog):
 
         self.lastFrameTime = time.time()
 
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Escape:
+            #close this programm
+            self.close()
+        if e.key() == Qt.Key_R:
+            # change target
+            self.tracker.tracker.change_selected_track()
+            self.single_track_mode = False
+            self.s_tracker = None
+            self.tracker.root_s_tracker.h_path = []
+            
+        if e.key() == Qt.Key_F:
+            # change target
+            self.single_track_mode = True
+
     def processVideo(self, frame):
         image_as_pil = read_image_as_pil(frame)
         image = np.ascontiguousarray(image_as_pil)
@@ -171,20 +186,30 @@ class CameraDialog(QtWidgets.QDialog):
                     print('---------------------lost object------------------')
         if self.frame_count % 50 == 0 or self.single_track_mode == False or self.s_tracker == None:
             # perform prediction
-            prediction_result = get_sliced_prediction(
-                image=image_as_pil,
-                detection_model=self.detector.detection_model,
-                slice_height=int(self.selectSlicing),
-                slice_width=int(self.selectSlicing),
-                overlap_height_ratio=0.2,
-                overlap_width_ratio=0.2,
-                perform_standard_pred=not False,
-                postprocess_type="GREEDYNMM",
-                postprocess_match_metric="IOS",
-                postprocess_match_threshold=0.5,
-                postprocess_class_agnostic=False,
-                verbose=1 if 1 else 0,
-            )
+            if self.selectSlicing == 'None':
+                prediction_result = get_prediction(
+                    image=image_as_pil,
+                    detection_model=self.detector.detection_model,
+                    shift_amount=[0, 0],
+                    full_shape=None,
+                    postprocess=None,
+                    verbose=0,
+                )
+            else:
+                prediction_result = get_sliced_prediction(
+                    image=image_as_pil,
+                    detection_model=self.detector.detection_model,
+                    slice_height=int(self.selectSlicing),
+                    slice_width=int(self.selectSlicing),
+                    overlap_height_ratio=0.2,
+                    overlap_width_ratio=0.2,
+                    perform_standard_pred=not False,
+                    postprocess_type="GREEDYNMM",
+                    postprocess_match_metric="IOS",
+                    postprocess_match_threshold=0.5,
+                    postprocess_class_agnostic=False,
+                    verbose=1 if 1 else 0,
+                )
 
             dets = prediction_result.object_prediction_list
             self.detections = dets
@@ -315,20 +340,30 @@ class CameraDialogIR(QtWidgets.QDialog):
                     print('---------------------lost object------------------')
         if self.frame_count % 50 == 0 or self.single_track_mode == False or self.s_tracker == None:
             # perform prediction
-            prediction_result = get_sliced_prediction(
-                image=image_as_pil,
-                detection_model=self.detector.detection_model,
-                slice_height=int(self.selectSlicing),
-                slice_width=int(self.selectSlicing),
-                overlap_height_ratio=0.2,
-                overlap_width_ratio=0.2,
-                perform_standard_pred=not False,
-                postprocess_type="GREEDYNMM",
-                postprocess_match_metric="IOS",
-                postprocess_match_threshold=0.5,
-                postprocess_class_agnostic=False,
-                verbose=1 if 1 else 0,
-            )
+            if self.selectSlicing == 'None':
+                prediction_result = get_prediction(
+                    image=image_as_pil,
+                    detection_model=self.detector.detection_model,
+                    shift_amount=[0, 0],
+                    full_shape=None,
+                    postprocess=None,
+                    verbose=0,
+                )
+            else:
+                prediction_result = get_sliced_prediction(
+                    image=image_as_pil,
+                    detection_model=self.detector.detection_model,
+                    slice_height=int(self.selectSlicing),
+                    slice_width=int(self.selectSlicing),
+                    overlap_height_ratio=0.2,
+                    overlap_width_ratio=0.2,
+                    perform_standard_pred=not False,
+                    postprocess_type="GREEDYNMM",
+                    postprocess_match_metric="IOS",
+                    postprocess_match_threshold=0.5,
+                    postprocess_class_agnostic=False,
+                    verbose=1 if 1 else 0,
+                )
 
             dets = prediction_result.object_prediction_list
             self.detections = dets
