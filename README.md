@@ -29,8 +29,21 @@ Object detection and object tracking are by far the most important fields of app
 pip install -r requirements.txt
 ```
 
-### Preparation
+### Set up Flir cam ([Install 2 files set up file Spinnaker SDK](https://www.flir.com/support-center/iis/machine-vision/downloads/spinnaker-sdk-download/spinnaker-sdk--download-files/))
+- Spinnaker Full SDK
+```
+Follow Operating System (Window, Linux, MacOS), corresponding.
+```
+- Python Spinnaker SDK
+```
+Follow version python and OS to choose file download correspondingly.
+```
+When install successfully. Next to config static IP same as IP Flir camera to connect. And run test connection with code:
+```
+python connectionFlircam.py
+```
 
+### Preparation
 - Setup for tracking object
 
 Run the following command to set paths for this project
