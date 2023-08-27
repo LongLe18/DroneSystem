@@ -40,7 +40,7 @@ Follow version python and OS to choose file download correspondingly.
 ```
 When install successfully. Next to config static IP same as IP Flir camera to connect. And run test connection with code:
 ```
-python connectionFlircam.py
+python connectlircam.py
 ```
 
 ### Preparation
