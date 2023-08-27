@@ -6,8 +6,8 @@ from PyQt5 import uic
 import numpy as np
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
-from PyQt5.QtCore import QTimer, QDateTime, Qt
-from PyQt5.QtWidgets import QFileDialog, QApplication, QMessageBox, QListWidgetItem, QHBoxLayout, QWidget, QLabel, QVBoxLayout
+from PyQt5.QtCore import QTimer, QDateTime, Qt, pyqtSignal
+from PyQt5.QtWidgets import QFileDialog, QApplication, QMessageBox, QListWidgetItem, QHBoxLayout, QWidget, QLabel, QVBoxLayout, QLineEdit, QPushButton
 from PyQt5.QtGui import QPixmap, QImage, QFont
 import PySpin
 
@@ -260,6 +260,7 @@ class CameraDialog(QtWidgets.QDialog):
             self.close()
 
 class CameraDialogIR(QtWidgets.QDialog):
+
     def __init__(self, cam, detector, tracker, selectSlicing, updateList):
         super().__init__()
 
@@ -422,7 +423,43 @@ class CameraDialogIR(QtWidgets.QDialog):
         height, width = image.shape
         q_image = QImage(image.data, width, height, QImage.Format_Grayscale8)
         return q_image
-    
+
+ 
+class RTSPWindow(QWidget):
+    stringEntered = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("RTSP Window")
+
+        self.textbox = QLineEdit(self)
+        self.textbox.setPlaceholderText("Enter a rtsp string")
+
+        self.ok_button = QPushButton("OK", self)
+        self.cancel_button = QPushButton("Cancel", self)
+        
+        self.ok_button.clicked.connect(self.on_ok_clicked)
+        self.cancel_button.clicked.connect(self.on_cancel_clicked)
+
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.textbox)
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+
+    def on_ok_clicked(self):
+        entered_text = self.textbox.text()
+        self.stringEntered.emit(entered_text)  # Emit the signal with the entered string
+        self.close()
+
+    def on_cancel_clicked(self):
+        self.close()
+
 class MainWindow(QtWidgets.QMainWindow):
     # class constructor
     def __init__(self, *args, **kwargs):
@@ -458,7 +495,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # set control_bt callback clicked  function
         self.bt_turnoffcamera.clicked.connect(self.reset_cameras)
-        self.bt_video_main.clicked.connect(self.run_video_main)
+        self.bt_video_main.clicked.connect(self.open_rtsp_window)
         self.bt_video_test.clicked.connect(self.run_video_test)
         self.bt_video_thermal.clicked.connect(self.run_video_thermal)
         self.blank_image = np.zeros((1000, 800, 3), np.uint8)
@@ -571,14 +608,22 @@ class MainWindow(QtWidgets.QMainWindow):
                     idx = camera_idx
                     break
             self.camera_timers[idx].start(30)
-        
-    def run_video_main(self):
+    
+
+    def open_rtsp_window(self):
+        self.new_window = RTSPWindow()
+        self.new_window.stringEntered.connect(self.run_video_main)  # Connect the signal to a slot
+        self.new_window.show()
+
+    def run_video_main(self, rtspStr):
         idx = 0
         for camera_idx, label_widget in self.camera_labels.items():
             if camera_idx in self.active_cameras:
                 idx += 1
                 continue
-            cap = cv2.VideoCapture(0)
+            if rtspStr == '0' or rtspStr == '1' or rtspStr == '2':
+                rtspStr = int(rtspStr)
+            cap = cv2.VideoCapture(rtspStr)
             if cap.isOpened():
                 self.active_cameras.add(camera_idx)
                 self.cap[camera_idx] = cap
