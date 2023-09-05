@@ -5,9 +5,12 @@ import logging
 import os
 import time
 from typing import List, Optional
-from operator import itemgetter
 
 from sahi.utils.import_utils import is_available
+
+# https://github.com/obss/sahi/issues/526
+if is_available("torch"):
+    import torch
 
 from functools import cmp_to_key
 
@@ -22,6 +25,7 @@ from sahi.postprocess.combine import (
     NMMPostprocess,
     NMSPostprocess,
     PostprocessPredictions,
+    SNMSPostprocess,
 )
 from sahi.prediction import ObjectPrediction, PredictionResult
 from sahi.slicing import slice_image
@@ -29,27 +33,22 @@ from sahi.utils.coco import Coco, CocoImage
 from sahi.utils.cv import (
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
+    crop_object_predictions,
     cv2,
     get_video_reader,
     read_image_as_pil,
     visualize_object_predictions,
     get_nearest_slice,
-    draw_history_path,
-    check_tracker,
-    draw_dets,
-    draw_sight,
 )
 from sahi.utils.file import Path, increment_path, list_files, save_json, save_pickle
 from sahi.utils.import_utils import check_requirements
-from tracking.grm.mainTracker import Tracker as GRMTracker
-from tracking.seq.mainTracker import Tracker as SEQTracker
-from tracking.sort.tracker import Tracker
 
 POSTPROCESS_NAME_TO_CLASS = {
     "GREEDYNMM": GreedyNMMPostprocess,
     "NMM": NMMPostprocess,
     "NMS": NMSPostprocess,
     "LSNMS": LSNMSPostprocess,
+    "SNMS": SNMSPostprocess,
 }
 
 LOW_MODEL_CONFIDENCE = 0.1
@@ -366,10 +365,8 @@ def predict(
     visual_hide_conf: bool = False,
     visual_export_format: str = "png",
     verbose: int = 1,
+    return_dict: bool = False,
     force_postprocess_type: bool = False,
-    apply_tracking: bool = False,
-    typeTracker: str = 'deepocsort',
-    model_pathTracking: str = None,
     **kwargs,
 ):
     """
@@ -456,8 +453,6 @@ def predict(
             If True, returns a dict with 'export_dir' field.
         force_postprocess_type: bool
             If True, auto postprocess check will e disabled
-        tracker: bool
-            If True, enable tracking object Detection
     """
     # assert prediction type
     if no_standard_prediction and no_sliced_prediction:
@@ -479,7 +474,10 @@ def predict(
 
     # init export directories
     save_dir = Path(increment_path(Path(project) / name, exist_ok=False))  # increment run
+    crop_dir = save_dir / "crops"
     visual_dir = save_dir / "visuals"
+    visual_with_gt_dir = save_dir / "visuals_with_gt"
+    pickle_dir = save_dir / "pickles"
     if not novisual or export_pickle or export_crop or dataset_json_path is not None:
         save_dir.mkdir(parents=True, exist_ok=True)  # make dir
 
@@ -524,16 +522,6 @@ def predict(
         detection_model.load_model()
     time_end = time.time() - time_start
     durations_in_seconds["model_load"] = time_end
-
-    # init model Tracking object
-    tracking_model = None
-    if apply_tracking:
-        tracking_model = AutoTrackingModel.from_pretrained(
-            model_type=typeTracker,
-            model_path=model_pathTracking,
-            device=model_device,
-            fp16=True,
-        )
 
     # iterate over source images
     durations_in_seconds["prediction"] = 0
@@ -596,6 +584,77 @@ def predict(
             tqdm.write(
                 "Prediction time is: {:.2f} ms".format(prediction_result.durations_in_seconds["prediction"] * 1000)
             )
+
+        if dataset_json_path:
+            if source_is_video is True:
+                raise NotImplementedError("Video input type not supported with coco formatted dataset json")
+
+            # append predictions in coco format
+            for object_prediction in object_prediction_list:
+                coco_prediction = object_prediction.to_coco_prediction()
+                coco_prediction.image_id = coco.images[ind].id
+                coco_prediction_json = coco_prediction.json
+                if coco_prediction_json["bbox"]:
+                    coco_json.append(coco_prediction_json)
+            if not novisual:
+                # convert ground truth annotations to object_prediction_list
+                coco_image: CocoImage = coco.images[ind]
+                object_prediction_gt_list: List[ObjectPrediction] = []
+                for coco_annotation in coco_image.annotations:
+                    coco_annotation_dict = coco_annotation.json
+                    category_name = coco_annotation.category_name
+                    full_shape = [coco_image.height, coco_image.width]
+                    object_prediction_gt = ObjectPrediction.from_coco_annotation_dict(
+                        annotation_dict=coco_annotation_dict, category_name=category_name, full_shape=full_shape
+                    )
+                    object_prediction_gt_list.append(object_prediction_gt)
+                # export visualizations with ground truths
+                output_dir = str(visual_with_gt_dir / Path(relative_filepath).parent)
+                color = (0, 255, 0)  # original annotations in green
+                result = visualize_object_predictions(
+                    np.ascontiguousarray(image_as_pil),
+                    object_prediction_list=object_prediction_gt_list,
+                    rect_th=visual_bbox_thickness,
+                    text_size=visual_text_size,
+                    text_th=visual_text_thickness,
+                    color=color,
+                    hide_labels=visual_hide_labels,
+                    hide_conf=visual_hide_conf,
+                    output_dir=None,
+                    file_name=None,
+                    export_format=None,
+                )
+                color = (255, 0, 0)  # model predictions in red
+                _ = visualize_object_predictions(
+                    result["image"],
+                    object_prediction_list=object_prediction_list,
+                    rect_th=visual_bbox_thickness,
+                    text_size=visual_text_size,
+                    text_th=visual_text_thickness,
+                    color=color,
+                    hide_labels=visual_hide_labels,
+                    hide_conf=visual_hide_conf,
+                    output_dir=output_dir,
+                    file_name=filename_without_extension,
+                    export_format=visual_export_format,
+                )
+
+        time_start = time.time()
+        # export prediction boxes
+        if export_crop:
+            output_dir = str(crop_dir / Path(relative_filepath).parent)
+            crop_object_predictions(
+                image=np.ascontiguousarray(image_as_pil),
+                object_prediction_list=object_prediction_list,
+                output_dir=output_dir,
+                file_name=filename_without_extension,
+                export_format=visual_export_format,
+            )
+        # export prediction list as pickle
+        if export_pickle:
+            save_path = str(pickle_dir / Path(relative_filepath).parent / (filename_without_extension + ".pickle"))
+            save_pickle(data=object_prediction_list, save_path=save_path)
+
         # export visualization
         if not novisual or view_video:
             output_dir = str(visual_dir / Path(relative_filepath).parent)
@@ -610,7 +669,6 @@ def predict(
                 output_dir=output_dir if not source_is_video else None,
                 file_name=filename_without_extension,
                 export_format=visual_export_format,
-                tracking_model=tracking_model
             )
             if not novisual and source_is_video:  # export video
                 output_video_writer.write(result["image"])
@@ -620,6 +678,43 @@ def predict(
             cv2.imshow("Prediction of {}".format(str(video_file_name)), result["image"])
             cv2.waitKey(1)
 
+        time_end = time.time() - time_start
+        durations_in_seconds["export_files"] = time_end
+
+    # export coco results
+    if dataset_json_path:
+        save_path = str(save_dir / "result.json")
+        save_json(coco_json, save_path)
+
+    if not novisual or export_pickle or export_crop or dataset_json_path is not None:
+        print(f"Prediction results are successfully exported to {save_dir}")
+
+    # print prediction duration
+    if verbose == 2:
+        print(
+            "Model loaded in",
+            durations_in_seconds["model_load"],
+            "seconds.",
+        )
+        print(
+            "Slicing performed in",
+            durations_in_seconds["slice"],
+            "seconds.",
+        )
+        print(
+            "Prediction performed in",
+            durations_in_seconds["prediction"],
+            "seconds.",
+        )
+        if not novisual:
+            print(
+                "Exporting performed in",
+                durations_in_seconds["export_files"],
+                "seconds.",
+            )
+
+    if return_dict:
+        return {"export_dir": save_dir}
 
 
 def predict_fiftyone(
@@ -812,236 +907,3 @@ def predict_fiftyone(
     session.view = eval_view.sort_by("eval_fp", reverse=True)
     while 1:
         time.sleep(3)
-
-
-def predict_new(
-    detection_model: DetectionModel = None,
-    model_type: str = "mmdet",
-    model_path: str = None,
-    model_config_path: str = None,
-    model_confidence_threshold: float = 0.25,
-    model_device: str = None,
-    model_category_mapping: dict = None,
-    model_category_remapping: dict = None,
-    source: str = None,
-    no_standard_prediction: bool = False,
-    no_sliced_prediction: bool = False,
-    image_size: int = None,
-    overlap_height_ratio: float = 0.2,
-    overlap_width_ratio: float = 0.2,
-    postprocess_type: str = "GREEDYNMM",
-    postprocess_match_metric: str = "IOS",
-    postprocess_match_threshold: float = 0.5,
-    postprocess_class_agnostic: bool = False,
-    novisual: bool = False,
-    view_video: bool = False,
-    frame_skip_interval: int = 0,
-    project: str = "runs/predict",
-    name: str = "exp",
-    verbose: int = 1,
-    force_postprocess_type: bool = False,
-    apply_tracking: bool = False,
-    **kwargs,
-):
-    # assert prediction type
-    if no_standard_prediction and no_sliced_prediction:
-        raise ValueError("'no_standard_prediction' and 'no_sliced_prediction' cannot be True at the same time.")
-
-    # auto postprocess type
-    if not force_postprocess_type and model_confidence_threshold < LOW_MODEL_CONFIDENCE and postprocess_type != "NMS":
-        logger.warning(
-            f"Switching postprocess type/metric to NMS/IOU since confidence threshold is low ({model_confidence_threshold})."
-        )
-        postprocess_type = "NMS"
-        postprocess_match_metric = "IOU"
-
-    # list slice window
-    slice = [(128, 128), (256, 256), (512, 512), (1024, 1024)]
-
-    # for profiling
-    durations_in_seconds = dict()
-
-    # init export directories
-    save_dir = Path(increment_path(Path(project) / name, exist_ok=False))  # increment run
-
-    # init image iterator
-    # TODO: rewrite this as iterator class as in https://github.com/ultralytics/yolov5/blob/d059d1da03aee9a3c0059895aa4c7c14b7f25a9e/utils/datasets.py#L178
-    source_is_video = False
-    num_frames = None
-
-    if os.path.isdir(source):
-        image_iterator = list_files(
-            directory=source,
-            contains=IMAGE_EXTENSIONS,
-            verbose=verbose,
-        )
-        video_file_name = 'image'
-    elif Path(source).suffix in VIDEO_EXTENSIONS:
-        source_is_video = True
-        read_video_frame, output_video_writer, video_file_name, num_frames = get_video_reader(
-            source, save_dir, frame_skip_interval, not novisual, view_video
-        )
-        image_iterator = read_video_frame
-    else:
-        video_file_name = 'image'
-        image_iterator = [source]
-
-    # init model instance
-    time_start = time.time()
-    if detection_model is None:
-        detection_model = AutoDetectionModel.from_pretrained(
-            model_type=model_type,
-            model_path=model_path,
-            config_path=model_config_path,
-            confidence_threshold=model_confidence_threshold,
-            device=model_device,
-            category_mapping=model_category_mapping,
-            category_remapping=model_category_remapping,
-            load_at_init=False,
-            image_size=image_size,
-            **kwargs,
-        )
-        detection_model.load_model()
-    time_end = time.time() - time_start
-    durations_in_seconds["model_load"] = time_end
-
-    # init model Tracking object
-    if apply_tracking:
-        root_s_tracker = GRMTracker('grm', 'vitb_256_ep300', None, None)
-        # root_s_tracker = SEQTracker('seqtrack', 'seqtrack_b256', None, None)
-        tracker = Tracker()
-
-    # iterate over source images
-    durations_in_seconds["prediction"] = 0
-    durations_in_seconds["slice"] = 0
-
-    input_type_str = "video frames" if source_is_video else "images"
-
-    frame_count = -1
-    s_tracker = None
-    counter = 0
-    prev_frame_time = 0
-    object_prediction_list = []
-    new_frame_time = 0
-
-    # params for tracking (grm, seq)
-    params = root_s_tracker.get_parameters()
-    params.debug = 0
-    params.tracker_name = root_s_tracker.name
-    params.param_name = root_s_tracker.parameter_name
-    
-    for ind, image_path in enumerate(
-        tqdm(image_iterator, f"Performing inference on {input_type_str}", total=num_frames)
-    ):  
-        new_frame_time = time.time()
-        frame_count += 1
-        single_track_mode = True
-        drone_ctx = None
-        drone_cty = None
-
-        # load image
-        image_as_pil = read_image_as_pil(image_path)
-        image = np.ascontiguousarray(image_as_pil)
-        (h, w, _) = image.shape
-
-        if (single_track_mode):
-            if(s_tracker == None): # init new single tracker
-                if len(object_prediction_list) > 0:
-                    obj_for_tracking = object_prediction_list[0]
-                    bbox = obj_for_tracking.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
-                    p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
-                    s_tracker = root_s_tracker.create_tracker(params)
-                    s_tracker.initialize(image, {'init_bbox': [p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1]]}) # (xmin, ymin, width, height)
-                else:
-                    single_track_mode = False
-                    s_tracker = None      
-            else: # update existing single tracker
-                out = s_tracker.track(image)
-                state = [int(s) for s in out['target_bbox']]
-                root_s_tracker.h_path.append((state[0], state[1], state[2], state[3]))
-
-                temp = image[int(state[1]) : int(state[1] + state[3]), int(state[0]) : int(state[0] + state[2]), :]
-                if temp.shape[0] > 0 and temp.shape[1] > 0:
-                    ctx = state[0] + state[2]/2
-                    cty = state[1] + state[3]/2
-                    cv2.rectangle(image, (state[0], state[1]), (state[2] + state[0], state[3] + state[1]),
-                         (0, 0, 255), 2)
-                    draw_history_path(image, root_s_tracker.h_path, num_point = 50)
-                    drone_ctx = ctx
-                    drone_cty = cty
-                else:
-                    single_track_mode = False
-                    s_tracker = None
-                    print('---------------------lost object------------------')
-        if frame_count % 10 == 0 or single_track_mode == False or s_tracker == None:
-            # perform prediction
-            if not no_sliced_prediction:
-                slice_window = get_nearest_slice(image_as_pil.size[0] // 1.5, slice)
-                # get sliced prediction
-                prediction_result = get_sliced_prediction(
-                    image=image_as_pil,
-                    detection_model=detection_model,
-                    slice_height=slice_window[1],
-                    slice_width=slice_window[0],
-                    overlap_height_ratio=overlap_height_ratio,
-                    overlap_width_ratio=overlap_width_ratio,
-                    perform_standard_pred=not no_standard_prediction,
-                    postprocess_type=postprocess_type,
-                    postprocess_match_metric=postprocess_match_metric,
-                    postprocess_match_threshold=postprocess_match_threshold,
-                    postprocess_class_agnostic=postprocess_class_agnostic,
-                    verbose=1 if verbose else 0,
-                )
-                object_prediction_list = prediction_result.object_prediction_list
-                durations_in_seconds["slice"] += prediction_result.durations_in_seconds["slice"]
-            else:
-                # get standard prediction
-                prediction_result = get_prediction(
-                    image=image_as_pil,
-                    detection_model=detection_model,
-                    shift_amount=[0, 0],
-                    full_shape=None,
-                    postprocess=None,
-                    verbose=0,
-                )
-                object_prediction_list = prediction_result.object_prediction_list
-
-            if drone_cty != None and len(object_prediction_list) > 0:
-                if not check_tracker((drone_ctx, drone_cty), object_prediction_list, thresh=5): # check_tracker return false
-                    counter += 1
-                    if counter > 5: # neu dang track object co toa do khac xa toa do detect duoc qua 5 frame
-                        s_tracker = None
-                        counter = 0
-                        print('==========================delete tracker===================')
-                else:
-                    counter = 0
-
-            tracker.update(object_prediction_list)
-            draw_dets(image, object_prediction_list)
-        
-            durations_in_seconds["prediction"] += prediction_result.durations_in_seconds["prediction"]
-            # Show prediction time
-            if verbose:
-                tqdm.write(
-                    "Prediction time is: {:.2f} ms".format(prediction_result.durations_in_seconds["prediction"] * 1000)
-                )
-        
-        # export visualization
-        if view_video:
-
-            fps = 1 / (new_frame_time - prev_frame_time)
-            prev_frame_time = new_frame_time
-            fps = int(fps)
-            fps  = "FPS: {}".format(str(fps))
-            # frame = draw_sight(frame, int(h / 2), int(w / 2))
-            cv2.putText(image, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-            k = cv2.waitKey(33)
-            if k == 27:    # Esc key to stop
-                break
-            elif k == 32:  # space press
-                tracker.change_selected_track()
-                s_tracker = None
-
-            cv2.imshow("Prediction of {}".format(str(video_file_name)), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-            cv2.waitKey(1)

@@ -47,6 +47,18 @@ class DWConv(Conv):
         super().__init__(c1, c2, k, s, g=math.gcd(c1, c2), d=d, act=act)
 
 
+class DWSConv(nn.Module):
+    """Depth-wise separable convolution."""
+    def __init__(self, c1, c2, k=1, s=1, d=1, act=True):  # ch_in, ch_out, kernel, stride, dilation, activation
+        super().__init__()
+        self.dwconv = DWConv(c1, c1, k, s, d=d, act=act)
+        self.pwconv = Conv(c1, c2, 1, 1, act=act)
+
+    def forward(self, x):
+        x = self.dwconv(x)
+        return self.pwconv(x)
+
+
 class DWConvTranspose2d(nn.ConvTranspose2d):
     """Depth-wise transpose convolution."""
 
@@ -439,6 +451,29 @@ class Ensemble(nn.ModuleList):
         y = torch.cat(y, 2)  # nms ensemble, y shape(B, HW, C)
         return y, None  # inference, train output
 
+
+class MDC(nn.Module):
+    """MDC module."""
+    def __init__(self, c1, c2):
+        super().__init__()
+
+        self.conv_1x1 = Conv(c1, c1 // 2, k=1, s=1, act=True)  # 1x1 convolution for dimensionality reduction
+        self.conv_3x3 = Conv(c1, c1 // 2, k=3, s=2, act=True)  # 1x1 convolution for dimensionality reduction
+        self.dws_conv = DWSConv(c1 // 2, c2, k=3, s=2, act=True)  # 3x3 depth-wise separable convolution for downsampling
+        self.maxpool = nn.MaxPool2d(2, stride=2)  # Maxpool for downsampling
+
+    def forward(self, x):
+        # Apply 1x1 convolution and depth-wise separable convolution
+        x1 = self.conv_1x1(x)
+        x1 = self.dws_conv(x1)
+
+        # Apply maxpool on the initial input
+        x2 = self.maxpool(x)
+
+        # Concatenate along the channel dimension
+        x = torch.cat((x1, x2), dim=1)
+        
+        return x
 
 # Model heads below ----------------------------------------------------------------------------------------------------
 

@@ -1,5 +1,3 @@
-import os
-import time
 from tracking.utils import logger as LOGGER
 from tracking.sort.tracker import Tracker as TrackerSORT
 from tracking.grm.mainTracker import Tracker as GRMTracker
@@ -29,7 +27,7 @@ class Tracker:
     def init_model(self):
         if self.model_type == 'grm':
             self.root_s_tracker = GRMTracker(self.model_type, MODEL_TYPE_TO_WEIGHT[self.model_type], None, None)
-        elif self.model_type == 'seq':
+        elif self.model_type == 'seqtrack':
             self.root_s_tracker = SEQTracker(self.model_type, MODEL_TYPE_TO_WEIGHT[self.model_type], None, None)
 
         self.params = self.load_parameter()

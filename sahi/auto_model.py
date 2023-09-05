@@ -14,6 +14,7 @@ MODEL_TYPE_TO_MODEL_CLASS_NAME = {
     "onnx": "ONNXDetectionModel",
 }
 
+
 class AutoDetectionModel:
     @staticmethod
     def from_pretrained(
@@ -76,4 +77,3 @@ class AutoDetectionModel:
             image_size=image_size,
             **kwargs,
         )
-

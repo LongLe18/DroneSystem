@@ -451,6 +451,112 @@ def nmm(
     return keep_to_merge_list
 
 
+def batched_snms(predictions: torch.tensor, match_metric: str = "IOU", match_threshold: float = 0.5):
+    """
+    Apply -soft-non-maximum suppression to avoid detecting too many
+    overlapping bounding boxes for a given object.
+    Args:
+        predictions: (tensor) The location preds for the image
+            along with the class predscores, Shape: [num_boxes,5].
+        match_metric: (str) IOU or IOS
+        match_threshold: (float) The overlap thresh for
+            match metric.
+    Returns:
+        A list of filtered indexes, Shape: [ ,]
+    """
+
+    scores = predictions[:, 4].squeeze()
+    category_ids = predictions[:, 5].squeeze()
+    keep_mask = torch.zeros_like(category_ids, dtype=torch.bool)
+    for category_id in torch.unique(category_ids):
+        curr_indices = torch.where(category_ids == category_id)[0]
+        curr_keep_indices = soft_nms(predictions[curr_indices], match_metric, match_threshold)
+        keep_mask[curr_indices[curr_keep_indices]] = True
+    keep_indices = torch.where(keep_mask)[0]
+    # sort selected indices by their scores
+    keep_indices = keep_indices[scores[keep_indices].sort(descending=True)[1]].tolist()
+    return keep_indices
+
+
+def soft_nms(
+    predictions: torch.tensor,
+    match_metric: str = "IOU",
+    match_threshold: float = 0.5,
+    sigma: float = 0.5,
+):
+    """
+    Apply Soft-NMS algorithm to decrease the scores of overlapping
+    bounding boxes instead of removing them.
+    Args:
+        predictions: (tensor) The location preds for the image
+            along with the class predscores, Shape: [num_boxes,5].
+        match_metric: (str) IOU or IOS
+        match_threshold: (float) The overlap thresh for
+            match metric.
+        method: (str) The method to calculate the new score,
+            options are 'linear', 'gaussian' or 'hard'.
+        sigma: (float) Sigma value for 'gaussian' method.
+    Returns:
+        A list of filtered indexes, Shape: [ ,]
+    """
+    x1 = predictions[:, 0]
+    y1 = predictions[:, 1]
+    x2 = predictions[:, 2]
+    y2 = predictions[:, 3]
+
+    scores = predictions[:, 4]
+    areas = (x2 - x1) * (y2 - y1)
+    order = scores.argsort()
+
+    keep = []
+
+    while len(order) > 0:
+        idx = order[-1]
+        keep.append(idx.tolist())
+        order = order[:-1]
+
+        if len(order) == 0:
+            break
+
+        xx1 = torch.index_select(x1, dim=0, index=order)
+        xx2 = torch.index_select(x2, dim=0, index=order)
+        yy1 = torch.index_select(y1, dim=0, index=order)
+        yy2 = torch.index_select(y2, dim=0, index=order)
+
+        xx1 = torch.max(xx1, x1[idx])
+        yy1 = torch.max(yy1, y1[idx])
+        xx2 = torch.min(xx2, x2[idx])
+        yy2 = torch.min(yy2, y2[idx])
+
+        w = torch.clamp(xx2 - xx1, min=0.0)
+        h = torch.clamp(yy2 - yy1, min=0.0)
+        inter = w * h
+
+        rem_areas = torch.index_select(areas, dim=0, index=order)
+
+        if match_metric == "IOU":
+            union = (rem_areas - inter) + areas[idx]
+            match_metric_value = inter / union
+        elif match_metric == "IOS":
+            smaller = torch.min(rem_areas, areas[idx])
+            match_metric_value = inter / smaller
+        else:
+            raise ValueError()
+
+        # The following lines are the difference between the original NMS and soft-NMS
+        # For boxes with IoU > threshold, we decrease their score.
+        scores[order] = torch.where(
+            match_metric_value > match_threshold,
+            scores[order] * torch.exp(-(match_metric_value * match_metric_value) / sigma),
+            scores[order]
+        )
+
+        # Then, we re-sort the remaining boxes
+        order = scores[order].argsort()
+        
+    return keep
+
+
 class PostprocessPredictions:
     """Utilities for calculating IOU/IOS based match for given ObjectPredictions"""
 
@@ -492,6 +598,29 @@ class NMSPostprocess(PostprocessPredictions):
 
         return selected_object_predictions
 
+
+class SNMSPostprocess(PostprocessPredictions):
+    def __call__(
+        self,
+        object_predictions: List[ObjectPrediction],
+    ):
+        object_prediction_list = ObjectPredictionList(object_predictions)
+        object_predictions_as_torch = object_prediction_list.totensor()
+        if self.class_agnostic:
+            keep = soft_nms(
+                object_predictions_as_torch, match_threshold=self.match_threshold, match_metric=self.match_metric
+            )
+        else:
+            keep = batched_snms(
+                object_predictions_as_torch, match_threshold=self.match_threshold, match_metric=self.match_metric
+            )
+
+        selected_object_predictions = object_prediction_list[keep].tolist()
+        if not isinstance(selected_object_predictions, list):
+            selected_object_predictions = [selected_object_predictions]
+
+        return selected_object_predictions
+    
 
 class NMMPostprocess(PostprocessPredictions):
     def __call__(

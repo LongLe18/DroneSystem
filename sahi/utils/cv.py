@@ -8,10 +8,10 @@ import time
 from typing import List, Optional, Union
 
 import cv2
-from math import sqrt
 import numpy as np
 import requests
 from PIL import Image
+from math import sqrt
 
 from sahi.utils.file import Path
 
@@ -252,43 +252,43 @@ def get_video_reader(
 
             while video_capture.isOpened:
 
-                # frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
-                # video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num + frame_skip_interval)
+                frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
+                video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num + frame_skip_interval)
 
-                # k = cv2.waitKey(20)
-                # frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
+                k = cv2.waitKey(20)
+                frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
 
-                # if k == 27:
-                #     print(
-                #         "\n===========================Closing==========================="
-                #     )  # Exit the prediction, Key = Esc
-                #     exit()
-                # if k == 100:
-                #     frame_num += 100  # Skip 100 frames, Key = d
-                # if k == 97:
-                #     frame_num -= 100  # Prev 100 frames, Key = a
-                # if k == 103:
-                #     frame_num += 20  # Skip 20 frames, Key = g
-                # if k == 102:
-                #     frame_num -= 20  # Prev 20 frames, Key = f
-                # video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+                if k == 27:
+                    print(
+                        "\n===========================Closing==========================="
+                    )  # Exit the prediction, Key = Esc
+                    exit()
+                if k == 100:
+                    frame_num += 100  # Skip 100 frames, Key = d
+                if k == 97:
+                    frame_num -= 100  # Prev 100 frames, Key = a
+                if k == 103:
+                    frame_num += 20  # Skip 20 frames, Key = g
+                if k == 102:
+                    frame_num -= 20  # Prev 20 frames, Key = f
+                video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
 
                 ret, frame = video_capture.read()
                 if not ret:
                     print("\n=========================== Video Ended ===========================")
                     break
-                yield Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                yield Image.fromarray(frame)
 
         else:
             while video_capture.isOpened:
-                # frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
-                # video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num + frame_skip_interval)
+                frame_num = video_capture.get(cv2.CAP_PROP_POS_FRAMES)
+                video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num + frame_skip_interval)
 
                 ret, frame = video_capture.read()
                 if not ret:
                     print("\n=========================== Video Ended ===========================")
                     break
-                yield Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                yield Image.fromarray(frame)
 
     if export_visual:
         # get video properties and create VideoWriter object
@@ -413,7 +413,6 @@ def visualize_object_predictions(
     output_dir: Optional[str] = None,
     file_name: str = "prediction_visual",
     export_format: str = "png",
-    tracking_model = None,
 ):
     """
     Visualizes prediction category names, bounding boxes over the source image
@@ -461,12 +460,13 @@ def visualize_object_predictions(
             image = cv2.addWeighted(image, 1, rgb_mask, 0.6, 0)
 
     # write label
-    # save_path_label = str(Path(output_dir) / 'labels' / (file_name + "." + 'txt'))
-    # (height, width, _) = image.shape
-    # Path(output_dir).mkdir(parents=True, exist_ok=True)
-    # if os.path.exists(str(Path(output_dir) / 'labels' )) == False:
-    #     os.mkdir(str(Path(output_dir) / 'labels/' ))
-    # file = open(save_path_label, 'w')
+    save_path_label = str(Path(output_dir) / 'labels' / (file_name + "." + 'txt'))
+    (height, width, _) = image.shape
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    if os.path.exists(str(Path(output_dir) / 'labels' )) == False:
+        os.mkdir(str(Path(output_dir) / 'labels/' ))
+    file = open(save_path_label, 'w')
+
 
     # add bboxes to image if present
     for object_prediction in object_prediction_list:
@@ -477,87 +477,48 @@ def visualize_object_predictions(
         category_name = object_prediction.category.name
         score = object_prediction.score.value
 
-        # apply tracking
-        if (tracking_model != None):
-            if colors is not None:
-                color = colors(object_prediction.category.id)
+        # set color
+        if colors is not None:
+            color = colors(object_prediction.category.id)
+        # set bbox points
+        p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
+        # visualize boxes
+        cv2.rectangle(
+            image,
+            p1,
+            p2,
+            color=color,
+            thickness=rect_th,
+        )
 
-            dets = np.array([[int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]), score,  object_prediction.category.id]])
-            ts = tracking_model.update(dets, image) # update tracker
+        if not hide_labels:
+            # arange bounding box text location
+            label = f"{category_name}"
 
-            xyxys = ts[:, 0:4].astype('int') # float64 to int
-            ids = ts[:, 4].astype('int') # float64 to int
+            if not hide_conf:
+                label += f" {score:.2f}"
 
-            if ts.shape[0] != 0:
-                for xyxy, id, in zip(xyxys, ids):
-                    cv2.rectangle(
-                        image,
-                        (xyxy[0], xyxy[1]),
-                        (xyxy[2], xyxy[3]),
-                        color,  
-                        rect_th
-                    )
-
-                    label = f'{id} {score:.2f} {category_name}'
-                    w, h = cv2.getTextSize(label, 0, fontScale=text_size, thickness=text_th)[0]  # label width, height
-                    outside = xyxy[1] - h - 3 >= 0  # label fits outside box
-                    p2 = xyxy[0] + w, xyxy[1] - h - 3 if outside else xyxy[1] + h + 3
-
-                    cv2.rectangle(image, (xyxy[0], xyxy[1]), p2, color, -1, cv2.LINE_AA)  # filled
-                    cv2.putText(
-                        image,
-                        label,
-                        (xyxy[0], xyxy[1] - 2 if outside else xyxy[1] + h + 2),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        text_size,
-                        (255, 255, 255),
-                        thickness=text_th
-                    )
-            else:
-                print('--------------------- lost object ------------------')
-        else: 
-            # set color 
-            if colors is not None:
-                color = colors(object_prediction.category.id)
-            # set bbox points
-            p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
-            # visualize boxes
-            cv2.rectangle(
+            w, h = cv2.getTextSize(label, 0, fontScale=text_size, thickness=text_th)[0]  # label width, height
+            outside = p1[1] - h - 3 >= 0  # label fits outside box
+            p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
+            # add bounding box text
+            cv2.rectangle(image, p1, p2, color, -1, cv2.LINE_AA)  # filled
+            cv2.putText(
                 image,
-                p1,
-                p2,
-                color=color,
-                thickness=rect_th,
+                label,
+                (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
+                0,
+                text_size,
+                (255, 255, 255),
+                thickness=text_th,
             )
-
-            if not hide_labels:
-                # arange bounding box text location
-                label = f"{category_name}"
-
-                if not hide_conf:
-                    label += f" {score:.2f}"
-
-                w, h = cv2.getTextSize(label, 0, fontScale=text_size, thickness=text_th)[0]  # label width, height
-                outside = p1[1] - h - 3 >= 0  # label fits outside box
-                p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
-                # add bounding box text
-                cv2.rectangle(image, p1, p2, color, -1, cv2.LINE_AA)  # filled
-                cv2.putText(
-                    image,
-                    label,
-                    (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
-                    0,
-                    text_size,
-                    (255, 255, 255),
-                    thickness=text_th,
-                )
         
         ## new write label text
-        # x_center = (((int(bbox[2]) - int(bbox[0])) / 2) + int(bbox[0])) / width
-        # y_center = (((int(bbox[3]) - int(bbox[1])) / 2) + int(bbox[1])) / height
-        # w_box = (int(bbox[2]) - int(bbox[0])) / width
-        # h_box = (int(bbox[3]) - int(bbox[1])) / height
-        # file.write(str(object_prediction.category.id) + f" {score:.3f}" + f" {x_center:.3f}" + f" {y_center:.3f}" + ' ' + str(w_box)+ ' ' + str(h_box) + '\n')
+        x_center = (((int(bbox[2]) - int(bbox[0])) / 2) + int(bbox[0])) / width
+        y_center = (((int(bbox[3]) - int(bbox[1])) / 2) + int(bbox[1])) / height
+        w_box = (int(bbox[2]) - int(bbox[0])) / width
+        h_box = (int(bbox[3]) - int(bbox[1])) / height
+        file.write(str(object_prediction.category.id) + f" {score:.3f}" + f" {x_center:.3f}" + f" {y_center:.3f}" + ' ' + str(w_box)+ ' ' + str(h_box) + '\n')
 
     # export if output_dir is present
     if output_dir is not None:
@@ -676,14 +637,12 @@ def exif_transpose(image: Image.Image):
             image.info["exif"] = exif.tobytes()
     return image
 
-
 def get_nearest_slice(image_width, slice_list):
     half_width = image_width
     for s in slice_list:
         if s[0] >= half_width:
             return s
     return slice_list[-1]  # return None if there is no suitable slice
-
 
 def draw_history_path(frame, h_path, num_point = 50):
     #draw path
@@ -695,10 +654,8 @@ def draw_history_path(frame, h_path, num_point = 50):
         ctObj1 = (int(bbox1[0] + bbox1[2]//2), int(bbox1[1] + bbox1[3]//2))
         cv2.line(frame, ctObj0, ctObj1, (255, 0, 255) ,2)
 
-
 def dis2p(x1,y1,x2,y2):
     return sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1))
-
 
 def check_tracker(center, dets, thresh = 15):
     if len(dets) == 0:
@@ -714,7 +671,6 @@ def check_tracker(center, dets, thresh = 15):
         if dis < thresh:
             res = True
     return res
-
 
 def draw_dets(image, dets):
     colors = Colors()

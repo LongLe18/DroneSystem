@@ -1,4 +1,3 @@
-import time
 from tracking.utils import logger as LOGGER
 from sahi.auto_model import AutoDetectionModel
 from tracking.utils.torch_utils import select_device
@@ -8,10 +7,11 @@ LOW_MODEL_CONFIDENCE = 0.1
 MODEL_TYPE_TO_WEIGHT = {
     "yolov8": "../weights/detection/yolov8_drone.pt",
     "onnx": "../weights/detection/yolov8_drone.onnx",
+    'yolonas': '../weights/detection/yolonas_drone.onnx'
 }
 
 class Detector:
-    def __init__(self, model_type: str = 'onnx', 
+    def __init__(self, model_type: str = 'yolov8', 
                  model_confidence_threshold: float = 0.25,
                  model_device: str = 'cuda:0',
                  image_size: int = 1280):

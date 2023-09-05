@@ -41,7 +41,7 @@ class Yolov8DetectionModel(DetectionModel):
         """
 
         self.model = model
-        
+
         # set category_mapping
         if not self.category_mapping:
             category_mapping = {str(ind): category_name for ind, category_name in enumerate(self.category_names)}
@@ -54,6 +54,7 @@ class Yolov8DetectionModel(DetectionModel):
             image: np.ndarray
                 A numpy array that contains the image to be predicted. 3 channel image should be in RGB order.
         """
+
         # Confirm model is loaded
         if self.model is None:
             raise ValueError("Model is not loaded, load it by calling .load_model()")
@@ -61,6 +62,7 @@ class Yolov8DetectionModel(DetectionModel):
         prediction_result = [
             result.boxes.data[result.boxes.data[:, 4] >= self.confidence_threshold] for result in prediction_result
         ]
+
         self._original_predictions = prediction_result
 
     @property
