@@ -96,6 +96,19 @@ Optional arguments:
 | `--slice ` | apply plugin SAHI to detect small object | `python demo.py --slice` |  `False` |
 | `--show` | display tracking video results | `python demo.py --show | `False` |  
 
+## Citation
+
+If any parts of our paper and code help your research, please consider citing us and giving a star to our repository.
+
+```
+@inproceedings{
+  title={Multi-model Deep Learning Drone Detection and Tracking in Complex Background Conditions},
+  author={Kim-Phuong Phung, Thai-Hoc Lu, Trung-Thanh Nguyen, Ngoc-Long Le, Huu-Hung Nguyen, Van-Phuc Hoang},
+  booktitle={2021 International Conference on Advanced Technologies for Communications (ATC)},
+  year={2021}
+}
+```
+
 ## **Acknowledgments**
 
 - Thanks for the great object tracking [GRM](https://github.com/Little-Podi/GRM),
