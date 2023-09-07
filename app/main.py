@@ -8,7 +8,7 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import QTimer, QDateTime, Qt, pyqtSignal
 from PyQt5.QtWidgets import QFileDialog, QApplication, QMessageBox, QListWidgetItem, QHBoxLayout, QWidget, QLabel, QVBoxLayout, QLineEdit, QPushButton
 from PyQt5.QtGui import QPixmap, QImage, QFont
-import PySpin
+# import PySpin
 
 import cv2
 import time
@@ -24,11 +24,11 @@ from sahi.utils.cv import (
 )
 from sahi.predict import get_sliced_prediction, get_prediction
 
-system = PySpin.System.GetInstance()
-# Get current library version
-version = system.GetLibraryVersion()
-cam_list = system.GetCameras()
-print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
+# system = PySpin.System.GetInstance()
+# # Get current library version
+# version = system.GetLibraryVersion()
+# cam_list = system.GetCameras()
+# print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
 
                 
 class MessageBox():
@@ -108,6 +108,7 @@ class CameraDialog(QtWidgets.QDialog):
         # Create a QLabel for displaying the camera feed
         self.label = QtWidgets.QLabel(self)
         self.label.setGeometry(QtCore.QRect(0, 0, 1000, 800))  # Set the size
+        self.label.mousePressEvent = self.label_clicked
 
         # Start the camera feed in the label
         self.cap = cap
@@ -118,9 +119,29 @@ class CameraDialog(QtWidgets.QDialog):
         self.lastFrameTime = time.time()
 
         self.fps = []
+        self.manual_mode = False
+        self.point_manual_p1 = None
+        self.point_manual_p2 = None
+    
     def updateselectSlicing(self, selectSlicing):
         self.selectSlicing = selectSlicing
         print("Update size window slicing")
+
+    def label_clicked(self, event):
+        if event.button() == Qt.LeftButton:
+            self.point_manual_p1 = None
+            self.point_manual_p2 = None
+            self.single_track_mode = False
+            self.s_tracker = None
+
+            x = event.pos().x()
+            y = event.pos().y()
+            self.point_manual_p1 = (int(x - 20), int(y - 20))
+            self.point_manual_p2 = (int(x + 20), int(y + 20))
+        elif event.button() == 2:  # Right mouse button (Qt.RightButton)
+            self.manual_mode = not self.manual_mode
+            self.single_track_mode = False
+            self.s_tracker = None
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:
@@ -154,17 +175,21 @@ class CameraDialog(QtWidgets.QDialog):
         self.single_track_mode = True
         if (self.single_track_mode):
             if(self.s_tracker == None): # init new single tracker
-                if len(self.detections) > 0:
-                    obj_for_tracking = max(self.detections, key=lambda item: item.score.value)
-                    bbox = obj_for_tracking.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
-                    p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
-                    self.s_tracker = self.tracker.create_tracker()
-                    self.s_tracker.initialize(image_copy, {'init_bbox': [p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1]]}) # (xmin, ymin, width, height)
+                if self.manual_mode == False:
+                    if len(self.detections) > 0:
+                        obj_for_tracking = max(self.detections, key=lambda item: item.score.value)
+                        bbox = obj_for_tracking.bbox.to_xyxy() # (xmin, ymin) , (xmax, ymax)
+                        p1, p2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
+                        self.s_tracker = self.tracker.create_tracker()
+                        self.s_tracker.initialize(image_copy, {'init_bbox': [p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1]]}) # (xmin, ymin, width, height)
+                    else:
+                        self.single_track_mode = False
+                        self.s_tracker = None     
                 else:
-                    self.single_track_mode = False
-                    self.s_tracker = None      
+                    if self.point_manual_p1 != None:
+                        self.s_tracker = self.tracker.create_tracker()
+                        self.s_tracker.initialize(image_copy, {'init_bbox': [self.point_manual_p1[0], self.point_manual_p1[1], self.point_manual_p2[0] - self.point_manual_p1[0], self.point_manual_p2[1] - self.point_manual_p1[1]]}) # (xmin, ymin, width, height)
             else: # update existing single tracker
-                
                 out = self.s_tracker.track(image_copy)
                 state = [int(s) for s in out['target_bbox']]
                 # self.tracker.root_s_tracker.h_path.append((state[0], state[1], state[2], state[3]))
@@ -189,50 +214,51 @@ class CameraDialog(QtWidgets.QDialog):
                     self.single_track_mode = False
                     self.s_tracker = None
                     print('---------------------lost object------------------')
-        if self.frame_count % 50 == 0 or self.single_track_mode == False or self.s_tracker == None:
-            # perform prediction
-            if self.selectSlicing == 'None':
-                prediction_result = get_prediction(
-                    image=image_as_pil,
-                    detection_model=self.detector.detection_model,
-                    shift_amount=[0, 0],
-                    full_shape=None,
-                    postprocess=None,
-                    verbose=0,
-                )
-            else:
-                prediction_result = get_sliced_prediction(
-                    image=image_as_pil,
-                    detection_model=self.detector.detection_model,
-                    slice_height=int(self.selectSlicing),
-                    slice_width=int(self.selectSlicing),
-                    overlap_height_ratio=0.2,
-                    overlap_width_ratio=0.2,
-                    perform_standard_pred=not False,
-                    postprocess_type="GREEDYNMM",
-                    postprocess_match_metric="IOS",
-                    postprocess_match_threshold=0.5,
-                    postprocess_class_agnostic=False,
-                    verbose=1 if 1 else 0,
-                )
-
-            dets = prediction_result.object_prediction_list
-            self.detections = dets
-            
-            if drone_cty != None and len(dets) > 0:
-                if not check_tracker((drone_ctx, drone_cty), dets, thresh=10): # check_tracker return false
-                    self.counter += 1
-                    if self.counter > 5: # neu dang track object co toa do khac xa toa do detect duoc qua 5 frame
-                        self.s_tracker = None
-                        self.counter = 0
-                        print('==========================delete tracker===================')
+        if self.manual_mode == False:
+            if self.frame_count % 50 == 0 or self.single_track_mode == False or self.s_tracker == None:
+                # perform prediction
+                if self.selectSlicing == 'None':
+                    prediction_result = get_prediction(
+                        image=image_as_pil,
+                        detection_model=self.detector.detection_model,
+                        shift_amount=[0, 0],
+                        full_shape=None,
+                        postprocess=None,
+                        verbose=0,
+                    )
                 else:
-                    # pass
-                    self.counter = 0
+                    prediction_result = get_sliced_prediction(
+                        image=image_as_pil,
+                        detection_model=self.detector.detection_model,
+                        slice_height=int(self.selectSlicing),
+                        slice_width=int(self.selectSlicing),
+                        overlap_height_ratio=0.2,
+                        overlap_width_ratio=0.2,
+                        perform_standard_pred=not False,
+                        postprocess_type="GREEDYNMM",
+                        postprocess_match_metric="IOS",
+                        postprocess_match_threshold=0.5,
+                        postprocess_class_agnostic=False,
+                        verbose=1 if 1 else 0,
+                    )
 
-            self.tracker.tracker.update(dets)
-            self.updateList(dets, image)
-            image_copy = draw_dets(image_copy, dets)
+                dets = prediction_result.object_prediction_list
+                self.detections = dets
+                
+                if drone_cty != None and len(dets) > 0:
+                    if not check_tracker((drone_ctx, drone_cty), dets, thresh=10): # check_tracker return false
+                        self.counter += 1
+                        if self.counter > 5: # neu dang track object co toa do khac xa toa do detect duoc qua 5 frame
+                            self.s_tracker = None
+                            self.counter = 0
+                            print('==========================delete tracker===================')
+                    else:
+                        # pass
+                        self.counter = 0
+
+                self.tracker.tracker.update(dets)
+                self.updateList(dets, image)
+                image_copy = draw_dets(image_copy, dets)
         
         if crop_drone is not None:
             image_copy[20:100, 880:980] = crop_drone
@@ -245,6 +271,11 @@ class CameraDialog(QtWidgets.QDialog):
         self.fps.append(1.0 / self.frame_time) # append to list for calculate average FPS
         image_copy = draw_sight(image_copy, int(self.image_dim[0 ]/ 2), int(self.image_dim[1] / 2))
         cv2.putText(image_copy, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        if self.manual_mode:
+            manual_mode = 'Manual mode'
+        else:
+            manual_mode = 'Auto mode'
+        cv2.putText(image_copy, manual_mode, (420, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2, cv2.LINE_AA)
         return image_copy
     
     def update_camera_feed(self):
