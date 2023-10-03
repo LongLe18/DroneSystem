@@ -8,7 +8,7 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import QTimer, QDateTime, Qt, pyqtSignal
 from PyQt5.QtWidgets import QFileDialog, QApplication, QMessageBox, QListWidgetItem, QHBoxLayout, QWidget, QLabel, QVBoxLayout, QLineEdit, QPushButton
 from PyQt5.QtGui import QPixmap, QImage, QFont
-# import PySpin
+import PySpin
 
 import cv2
 import time
@@ -24,11 +24,11 @@ from sahi.utils.cv import (
 )
 from sahi.predict import get_sliced_prediction, get_prediction
 
-# system = PySpin.System.GetInstance()
-# # Get current library version
-# version = system.GetLibraryVersion()
-# cam_list = system.GetCameras()
-# print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
+system = PySpin.System.GetInstance()
+# Get current library version
+version = system.GetLibraryVersion()
+cam_list = system.GetCameras()
+print('Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
 
                 
 class MessageBox():
@@ -118,7 +118,6 @@ class CameraDialog(QtWidgets.QDialog):
 
         self.lastFrameTime = time.time()
 
-        self.fps = []
         self.manual_mode = False
         self.point_manual_p1 = None
         self.point_manual_p2 = None
@@ -268,7 +267,6 @@ class CameraDialog(QtWidgets.QDialog):
         self.frame_time = self.frame_time + (end - self.lastFrameTime - self.frame_time) / 30.0
         self.lastFrameTime = end
         fps  = "FPS: {:.2f}".format(1.0 / self.frame_time)
-        self.fps.append(1.0 / self.frame_time) # append to list for calculate average FPS
         image_copy = draw_sight(image_copy, int(self.image_dim[0 ]/ 2), int(self.image_dim[1] / 2))
         cv2.putText(image_copy, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         if self.manual_mode:
@@ -296,8 +294,8 @@ class CameraDialog(QtWidgets.QDialog):
         else:
             self.close()
 
-    def closeEvent(self, event):
-        print('Average FPS: {:.2f}'.format(sum(self.fps) / len(self.fps)))
+    # def closeEvent(self, event):
+    #     print('Average FPS: {:.2f}'.format(sum(self.fps) / len(self.fps)))
     
 class CameraDialogIR(QtWidgets.QDialog):
 

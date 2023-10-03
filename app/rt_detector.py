@@ -5,7 +5,7 @@ from tracking.utils.torch_utils import select_device
 LOW_MODEL_CONFIDENCE = 0.1
 
 MODEL_TYPE_TO_WEIGHT = {
-    "yolov8": "../weights/detection/yolov8_drone.pt",
+    "yolov8": "../weights/detection/7K.pt",
     "onnx": "../weights/detection/yolov8_drone.onnx",
     'yolonas': '../weights/detection/yolonas_drone.onnx'
 }
