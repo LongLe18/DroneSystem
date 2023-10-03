@@ -277,7 +277,6 @@ class CameraDialog(QtWidgets.QDialog):
         return image_copy
     
     def update_camera_feed(self):
-
         ret, frame = self.cap.read()
         if ret:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -294,8 +293,11 @@ class CameraDialog(QtWidgets.QDialog):
         else:
             self.close()
 
-    # def closeEvent(self, event):
-    #     print('Average FPS: {:.2f}'.format(sum(self.fps) / len(self.fps)))
+    def closeEvent(self, event):
+        # print('Average FPS: {:.2f}'.format(sum(self.fps) / len(self.fps)))
+        self.timer.stop()
+        self.timer.deleteLater()
+        super().closeEvent(event)
     
 class CameraDialogIR(QtWidgets.QDialog):
 
@@ -738,6 +740,7 @@ class MainWindow(QtWidgets.QMainWindow):
             print('Error: %s' % ex)
 
     def initialize_camera(self):
+        canRun = True
         # Retrieve list of cameras from the system
         num_cameras = cam_list.GetSize()
         print('Number of cameras detected: %d' % num_cameras)
@@ -750,12 +753,15 @@ class MainWindow(QtWidgets.QMainWindow):
             system.ReleaseInstance()
             msg_box = MessageBox("Không có camera!")
             msg_box.warning()
+            canRun = False
+            return canRun
 
         self.cam = cam_list.GetByIndex(0)  # Assuming the first camera
         self.cam.Init()
         nodemap_tldevice = self.cam.GetTLDeviceNodeMap()
         nodemap = self.cam.GetNodeMap()
         self.acquire_and_display_images(nodemap, nodemap_tldevice)
+        return canRun
 
     def update_camera(self):
         image = self.capture_image()
@@ -789,8 +795,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # if timer is stopped
         if self.bt_video_thermal.text() == "Camera nhiệt":
 
-            self.initialize_camera()  # Initialize the camera and start the stream
- 
+            canRun = self.initialize_camera()  # Initialize the camera and start the stream
+            if canRun == False:
+                return
+            
             self.active_cameras.add(2)
             self.cap[2] = 'ir'
             self.camera_timers[2].start(30)
