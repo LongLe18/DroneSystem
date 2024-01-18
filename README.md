@@ -57,7 +57,7 @@ tracking/grm/local.py  # paths about training
 tracking/seq/local.py  # paths about testing
 ```
 
-- Download weight for detection from [google drive]() and tracking object [GRM](https://github.com/Little-Podi/GRM/releases/download/downloads/Trained_Models.zip), [SEQTrack](https://github.com/microsoft/VideoX/blob/master/SeqTrack/MODEL_ZOO.md) models. And path of folder weight (at same root system) is like that
+- Download weight for detection from [google drive](https://drive.google.com/drive/folders/1ehcj1kftkuuy90F7KhyQx9PpUv4YFPw0?usp=sharing) and tracking object [GRM](https://github.com/Little-Podi/GRM/releases/download/downloads/Trained_Models.zip), [SEQTrack](https://github.com/microsoft/VideoX/blob/master/SeqTrack/MODEL_ZOO.md) models. And path of folder weight (at same root system) is like that
 
 ```python
 DroneSystem
