@@ -107,6 +107,12 @@ If any parts of our paper and code help your research, please consider citing us
   booktitle={2021 International Conference on Advanced Technologies for Communications (ATC)},
   year={2021}
 }
+@inproceedings{
+  title=SuperYOLO8: Enhancing Performance of Object Detection in Real-time Multi-modal Remote Sensing Imagery through SuperYOLO and YOLOv8},
+  author={Kim-Phuong Phung, Ngoc-Long Le, Quang-Uy Nguyen},
+  booktitle={2023 RIVF International Conference on Computing and Communication Technologies (RIVF)},
+  year={2023}
+}
 ```
 
 ## **Acknowledgments**
